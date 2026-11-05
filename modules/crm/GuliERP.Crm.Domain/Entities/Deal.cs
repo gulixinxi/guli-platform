@@ -27,6 +27,8 @@ public sealed class Deal : ICompanyScoped
 
     /// <summary>业务品类</summary>
     public BusinessCategory Category { get; set; } = BusinessCategory.Other;
+    public long? SourceLeadDemandAssessmentId { get; set; }
+    public int? SourceLeadDemandAssessmentVersion { get; set; }
 
     /// <summary>预计金额</summary>
     public decimal ExpectedAmount { get; set; }

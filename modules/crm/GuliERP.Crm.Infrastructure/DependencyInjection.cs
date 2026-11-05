@@ -22,6 +22,7 @@ public static class DependencyInjection
         });
 
         // 服务注册
+        services.AddScoped<ICrmNumberGenerator, CrmNumberGenerator>();
         services.AddScoped<ILeadService, LeadService>();
         services.AddScoped<ICompanyService, CompanyService>();
         services.AddScoped<IContactService, ContactService>();
@@ -31,11 +32,55 @@ public static class DependencyInjection
         services.AddScoped<ISignalService, SignalService>();
         // ERP客商候选匹配（只读）：通过MDM应用层契约查询，不直接用MdmDbContext
         services.AddScoped<ICompanyErpMatchService, CompanyErpMatchService>();
-        services.AddHttpClient<QuakeSearchService>();
+        services.AddSingleton<IQuakeCredentialPersistence, WindowsQuakeCredentialPersistence>();
+        services.AddSingleton<QuakeRuntimeCredentialStore>();
+        services.AddScoped<LegacyRequestTelemetry>();
+        // 清洗器是无状态的纯函数，单例即可，便于规则表共享与单测。
+        services.AddSingleton<QuakeAssetCleaner>();
+        services.AddHttpClient<QuakeSearchService>()
+            .ConfigurePrimaryHttpMessageHandler(CreateQuakeHandler);
+        services.AddHttpClient<QuakeAssetService>()
+            .ConfigurePrimaryHttpMessageHandler(CreateQuakeHandler);
         services.AddScoped<IcpLookupService>();
-        services.AddHttpClient<WebsiteCheckService>();
+        services.AddHttpClient<WebsiteCheckService>()
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ConnectCallback = PublicWebTarget.ConnectAsync
+            });
         services.AddScoped<GeoCheckService>();
         services.AddScoped<ReverseLookupService>();
+        services.AddScoped<ReverseLookupRecordService>();
+        services.AddScoped<IdentityCandidateService>();
+        services.AddScoped<IdentityCandidateBatchService>();
+        services.AddSingleton<ChinazConnectorSettings>();
+        services.AddScoped<IntelligenceSourceCatalog>();
+        services.AddScoped<DataSourceAuthorizationService>();
+        services.AddScoped<DataSourceExecutionService>();
+        services.AddScoped<LegacySourceMigrationService>();
+        services.AddScoped<LegacyQuotaSimulationService>();
+        services.AddHttpClient<ChinazLookupService>(client => client.Timeout = TimeSpan.FromSeconds(20))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseProxy = false,
+                ConnectCallback = PublicWebTarget.ConnectAsync
+            });
+        services.AddScoped<WebsiteDiagnosticService>();
+        services.AddScoped<WebsiteContentEvidenceService>();
+        services.AddSingleton<IAiPreparationAdapter, SimulatedAiPreparationAdapter>();
+        services.AddSingleton<IAiPreparationExecutionGate, SimulatedOnlyAiPreparationGate>();
+        services.AddScoped<AiPreparationService>();
+        services.AddScoped<VisitHandoffPreviewService>();
+        services.AddScoped<WebsiteSignalWorkflowService>();
+        services.AddScoped<WebsiteRecheckService>();
+        services.AddScoped<ContactCandidateService>();
+        services.AddHostedService<ContactCandidateRetentionWorker>();
+        services.AddScoped<IdentityLeadPromotionService>();
+        services.AddHostedService<WebsiteDiagnosticWorker>();
+        services.AddHostedService<WebsiteRecheckWorker>();
+        services.AddScoped<LeadDemandAssessmentService>();
         services.AddScoped<QuakeQueryHistoryService>();
 
         // 权限策略
@@ -60,6 +105,9 @@ public static class DependencyInjection
             options.AddPolicy(CrmPolicies.LeadExport, policy => policy
                 .RequireAuthenticatedUser()
                 .AddRequirements(new PermissionRequirement(CrmPermissions.LeadExport)));
+            options.AddPolicy(CrmPolicies.IdentityReview, policy => policy
+                .RequireAuthenticatedUser()
+                .AddRequirements(new PermissionRequirement(CrmPermissions.IdentityReview)));
 
             // 企业/客户主档
             options.AddPolicy(CrmPolicies.CompanyRead, policy => policy
@@ -117,4 +165,9 @@ public static class DependencyInjection
 
         return services;
     }
+
+    internal static SocketsHttpHandler CreateQuakeHandler() => new()
+    {
+        AllowAutoRedirect = false
+    };
 }

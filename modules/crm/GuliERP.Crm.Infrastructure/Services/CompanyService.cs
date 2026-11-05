@@ -9,10 +9,12 @@ namespace GuliERP.Crm.Infrastructure.Services;
 public class CompanyService : ICompanyService
 {
     private readonly CrmDbContext _db;
+    private readonly ICrmNumberGenerator _numbers;
 
-    public CompanyService(CrmDbContext db)
+    public CompanyService(CrmDbContext db, ICrmNumberGenerator numbers)
     {
         _db = db;
+        _numbers = numbers;
     }
 
     public async Task<PagedResult<CompanyDto>> ListAsync(CompanyListQuery query, CancellationToken ct)
@@ -71,7 +73,7 @@ public class CompanyService : ICompanyService
         var company = new Company
         {
             Id = SnowflakeId(),
-            CompanyNo = await GenerateCompanyNo(ct),
+            CompanyNo = await _numbers.NextCompanyNoAsync(ct),
             FullName = request.FullName.Trim(),
             CreditCode = normalizedCreditCode,
             ShortName = request.ShortName,
@@ -109,6 +111,11 @@ public class CompanyService : ICompanyService
         var company = await _db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (company is null) return null;
 
+        // 负责人只能通过专门分配操作变更：普通编辑不得更换或清空。
+        // 判定放在任何赋值之前，抛错时不留下半写状态。
+        if (CrmOwnerRules.IsOwnerChange(company.OwnerId, request.OwnerId))
+            throw new CrmOwnerChangeNotAllowedException(CrmOwnerEntityKind.Company);
+
         company.FullName = request.FullName.Trim();
         company.CreditCode = NormalizeCreditCode(request.CreditCode);
         company.ShortName = request.ShortName;
@@ -123,7 +130,7 @@ public class CompanyService : ICompanyService
         company.WebsiteStatus = request.WebsiteStatus;
         company.Source = request.Source;
         company.SourceUrl = request.SourceUrl;
-        company.OwnerId = request.OwnerId;
+        // 负责人不在普通编辑里写入：省略 ownerId 或传 null 保持原负责人。
         company.Status = request.Status;
         company.Rating = request.Rating;
         company.Remarks = request.Remarks;
@@ -133,14 +140,10 @@ public class CompanyService : ICompanyService
         return ToDto(company);
     }
 
-    public async Task<bool> DeleteAsync(long id, CancellationToken ct)
-    {
-        var company = await _db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (company is null) return false;
-        _db.Companies.Remove(company);
-        await _db.SaveChangesAsync(ct);
-        return true;
-    }
+    // Existing company relationships cascade to contacts, deals and activities.
+    // Keep deletion closed until the retention policy and FK behavior are reviewed.
+    public Task<bool> DeleteAsync(long id, CancellationToken ct) =>
+        throw new NotSupportedException("CRM company deletion is disabled to protect related records.");
 
     public async Task<bool> UpdateTagsAsync(long id, List<string> tags, CancellationToken ct)
     {
@@ -157,6 +160,16 @@ public class CompanyService : ICompanyService
         var company = await _db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (company is null) return false;
         company.OwnerId = ownerId;
+        company.ModifiedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> ClearOwnerAsync(long id, CancellationToken ct)
+    {
+        var company = await _db.Companies.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (company is null) return false;
+        company.OwnerId = null;
         company.ModifiedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
         return true;
@@ -250,13 +263,6 @@ public class CompanyService : ICompanyService
         x.HasWebsite, x.WebsiteStatus, x.Source, x.SourceUrl, x.CollectedAt,
         x.OwnerId, x.Status, x.Rating, x.IsRatingSuggested, x.ExternalKey, x.ExternalSource,
         x.Remarks, x.Tags.ToList(), x.CreatedAt, x.CreatedBy);
-
-    private async Task<string> GenerateCompanyNo(CancellationToken ct)
-    {
-        var date = DateTime.Now.ToString("yyyyMMdd");
-        var count = await _db.Companies.CountAsync(x => x.CompanyNo.StartsWith($"CO{date}"), ct);
-        return $"CO{date}{(count + 1):D4}";
-    }
 
     private static long SnowflakeId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000 + Random.Shared.Next(1000);
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace GuliERP.Crm.Infrastructure.Services;
@@ -12,12 +13,16 @@ namespace GuliERP.Crm.Infrastructure.Services;
 public class GeoCheckService
 {
     private readonly ILogger<GeoCheckService> _logger;
+    private readonly bool _externalCliEnabled;
     private const string GeoCli = "geo";
     private const string PlaywrightBrowsersPath = "/home/user/.cache/ms-playwright";
 
-    public GeoCheckService(ILogger<GeoCheckService> logger)
+    public GeoCheckService(ILogger<GeoCheckService> logger, IConfiguration configuration)
     {
         _logger = logger;
+        // geo CLI manages its own redirects/connections, outside our pinned HTTP handler.
+        // Enable only behind an operator-controlled egress policy.
+        _externalCliEnabled = configuration.GetValue<bool>("Crm:EnableGeoCliWithGuardedEgress");
     }
 
     /// <summary>
@@ -25,11 +30,18 @@ public class GeoCheckService
     /// </summary>
     public async Task<GeoCheckResult> CheckAsync(string domain, CancellationToken ct = default)
     {
-        domain = domain.Replace("http://", "").Replace("https://", "").TrimEnd('/').Split('/')[0];
         var result = new GeoCheckResult { Domain = domain };
 
         try
         {
+            if (!_externalCliEnabled)
+            {
+                result.Error = "GEO CLI 未启用；需先配置受控网络出口。";
+                return result;
+            }
+            domain = PublicWebTarget.Host(domain);
+            await PublicWebTarget.ResolveAsync(domain, ct);
+            result.Domain = domain;
             // 优先尝试 HTTPS，失败则尝试 HTTP
             var url = $"https://{domain}";
             var raw = await RunGeoAsync(url, ct);
@@ -60,7 +72,7 @@ public class GeoCheckService
             result.Url = GetStr(root, "url") ?? url;
             result.Score = GetInt(root, "score") ?? 0;
             result.Band = GetStr(root, "band");
-            result.Error = GetStr(root, "error");
+            result.Error = GetStr(root, "error") is null ? null : "GEO 工具返回错误，请检查服务状态。";
             result.ScoreMax = GetInt(root, "score_max") ?? 100;
             // 各维度得分
             var dimensions = new[] { "google_ai", "robots", "schema", "content", "brand_entity", "meta", "llms", "signals", "ai_discovery" };
@@ -78,8 +90,8 @@ public class GeoCheckService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "GEO检测失败: {Domain}", domain);
-            result.Error = ex.Message;
+            _logger.LogError("GEO检测失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
+            result.Error = "GEO 检测失败，请稍后重试。";
         }
 
         return result;
@@ -132,7 +144,7 @@ public class GeoCheckService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("geo CLI 执行失败 {Url}: {Msg}", url, ex.Message);
+            _logger.LogWarning("geo CLI 执行失败 {Url}: {ExceptionType}", url, ex.GetType().Name);
             return null;
         }
     }

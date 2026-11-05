@@ -12,6 +12,13 @@
 
 **`gulierp_g2_003_test`** — this is the SINGLE canonical target for ALL GuliERP Next Foundation / Identity / Authorization Operator verification until the project formally announces a database cutover.
 
+**ACTIVE-USE HOLD (user instruction, 2026-10-25):** this database is currently in
+use by other development tasks. No agent may write to it — no `INSERT` /
+`UPDATE` / `DELETE`, no `dotnet ef database update`, no seed execution, and no
+test or harness run that mutates it. Read-only inspection only, under the
+Wrong-DB Guard in §5.1. This hold supersedes any Goal that would otherwise
+apply a migration to this target.
+
 | Field | Value |
 |---|---|
 | Host | `192.168.2.228` |
@@ -216,3 +223,23 @@ The fix is a single-line minimal change: `Database=gulierp_g2_001` → `Database
 - **STABLE NAME CUTOVER**: deferred to Pre-G2-006
 - **WRONG-DB GUARD**: `tools/dev/assert-gulierp-db-target.ps1` provided
 - **FUTURE CUTOVER**: requires explicit Goal + Migration + Operator Evidence; this registry MUST be updated first
+
+---
+
+## 8. CRM V1.2 PLANNED FORMAL TARGET (2026-10-29; NOT ACTIVE)
+
+This section records the user's release planning decisions. It does **not** change the canonical operator verification database in section 1, authorize a cutover, or establish that the planned database exists.
+
+| Field | Planned value / status |
+|---|---|
+| Host / port | `192.168.2.228:5432` — user-provided; server identity not independently verified for formal release |
+| Database | `gulierp_next_prod` — user-approved name; **not created** |
+| Owner / migration / backup PostgreSQL role | `gulidata` proposed; actual privileges not verified |
+| Application runtime role | Separate low-privilege role approved in principle; not created, named, granted, or tested |
+| Windows backup task account | Local `GULIAI\Administrator` selected by user; scheduled task not installed or tested |
+| Backup destination | Dedicated `D:\backup\gulierp_next_prod`; isolated local ACL and synthetic file access checked; formal backup not performed |
+| Retention / recovery owner | Daily backups 7 days, weekly backups 4 weeks; administrator (`admin`) responsible for recovery |
+| Off-host copy | User declined; document as a single-site loss risk |
+| Release gate | **BLOCKED**: independent target identity, runtime-role privileges, capacity, formal backup and independent restore, migration preflight, and final artifact binding remain unverified |
+
+The formal release must use an explicit target assertion against the approved host, port, database, role, and server-reported identity. Do not infer correctness from a connection-string database name alone. Do not run formal migration, import, deployment, or backup execution until the separate release authorization and all applicable gates are satisfied. The `gulierp_g2_003_test` ACTIVE-USE HOLD remains in force.

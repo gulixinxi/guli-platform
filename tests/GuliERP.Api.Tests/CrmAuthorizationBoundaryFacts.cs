@@ -38,6 +38,14 @@ public sealed class CrmAuthorizationBoundaryFacts
             CrmPolicies.LeadRead, CrmPolicies.CompanyRead);
         AssertPolicies(endpoints, "/api/v1/crm/companies/tasks/today",
             CrmPolicies.CompanyRead, CrmPolicies.ActivityRead);
+        // Candidate listing records an audit event, so a read-only role must not invoke it.
+        AssertPolicies(endpoints, "/api/v1/crm/contacts/candidates/by-identity/{identityId:long}/view",
+            CrmPolicies.ContactManage);
+        var companyDelete = Assert.Single(endpoints, item =>
+            item.RoutePattern.RawText == "/api/v1/crm/companies/{id:long}"
+            && item.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods.Contains("DELETE") == true);
+        Assert.Contains(companyDelete.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            data => data.Policy == CrmPolicies.CompanyManage);
     }
 
     private static void AssertPolicies(

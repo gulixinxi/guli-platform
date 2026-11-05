@@ -1,6 +1,7 @@
 <template>
   <div class="opp-suggestions">
-    <h2 class="page-title">商机建议 <span class="subtitle">（规则引擎自动生成，人工确认后转商机）</span></h2>
+    <h2 class="page-title">商机建议 <span class="subtitle">（规则初评，核验证据和客户需求后再转商机）</span></h2>
+    <el-alert class="assessment-note" type="info" :closable="false" show-icon title="评估方向：建站、GEO、自媒体、外贸获客。当前仅对有规则依据的方向生成待核验建议；没有建议不代表没有需求。" />
 
     <el-card v-loading="loading" shadow="never">
       <template #header>
@@ -23,6 +24,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="opportunityType" label="机会类型" width="110" />
+        <el-table-column label="产品品类" width="110">
+          <template #default="{ row }">
+            <el-tag size="small" type="warning">{{ businessCategoryLabel(row.productCategory) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="评估状态" width="100">
+          <template #default="{ row }"><el-tag type="info" size="small">{{ assessmentStateLabel(row.assessmentStatus) }}</el-tag></template>
+        </el-table-column>
         <el-table-column prop="reason" label="推荐理由" min-width="200" show-overflow-tooltip />
         <el-table-column prop="evidence" label="证据" min-width="180" show-overflow-tooltip />
         <el-table-column prop="suggestedAmount" label="建议报价" width="120" />
@@ -44,11 +53,19 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { getOpportunitySuggestions, type OpportunitySuggestion } from '../../api/crm';
 import { useCrmPermission } from '../../composables/useCrmPermission';
+import { assessmentStateLabels, businessCategoryLabel, crmTextLabel } from '../../utils/crmEnum';
 
 const router = useRouter();
 const can = useCrmPermission();
 const loading = ref(false);
 const suggestions = ref<OpportunitySuggestion[]>([]);
+
+// Server sends the same wire vocabulary the demand-assessment State uses
+// (unknown / pending / potential / confirmed / not_applicable). Falling back
+// to the raw value keeps an unmapped value visible instead of blanking it.
+function assessmentStateLabel(s: string): string {
+  return crmTextLabel(assessmentStateLabels, s, s);
+}
 
 const priorityOrder: Record<string, number> = { '高': 0, '中高': 1, '中': 2, '低': 3 };
 const sortedSuggestions = computed(() =>
@@ -80,10 +97,8 @@ function goCreateDeal(row: OpportunitySuggestion) {
     return;
   }
 
-  router.push({
-    path: '/crm/deals',
-    query: { action: 'create', companyId: String(row.targetId), category: String(row.productCategory), suggestion: row.opportunityType }
-  });
+  ElMessage.info('请先在线索中确认需求，再创建正式商机。');
+  router.push({ path: '/crm/leads', query: { keyword: row.targetName } });
 }
 
 onMounted(loadData);
@@ -93,5 +108,6 @@ onMounted(loadData);
 .opp-suggestions { padding: 16px; }
 .page-title { margin: 0 0 16px; font-size: 20px; }
 .subtitle { font-size: 13px; color: #909399; font-weight: normal; }
+.assessment-note { margin-bottom: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 </style>

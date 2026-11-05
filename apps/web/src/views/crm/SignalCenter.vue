@@ -1,6 +1,6 @@
 <template>
   <div class="signal-center">
-    <h2 class="page-title">企业情报信号 <span class="subtitle">（Signal Center，外部采集的企业动态）</span></h2>
+    <h2 class="page-title">企业情报信号 <span class="subtitle">（企业动态与网站复检提醒）</span></h2>
 
     <el-card v-loading="loading" shadow="never">
       <template #header>
@@ -25,15 +25,15 @@
       <el-table :data="signals" size="small" stripe>
         <el-table-column label="状态" width="80">
           <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+            <el-tag :type="statusTag(row.status)" size="small">{{ isWebsiteReminder(row.source) && crmEnumNumber(row.status, signalStatuses) === 1 ? '已核对' : statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="类型" width="100">
-          <template #default="{ row }">{{ typeLabels[row.type] || row.type }}</template>
+          <template #default="{ row }">{{ typeLabels[crmEnumNumber(row.type, signalTypes)] || row.type }}</template>
         </el-table-column>
         <el-table-column prop="companyName" label="企业" min-width="160" show-overflow-tooltip />
         <el-table-column prop="title" label="信号标题" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="source" label="来源" width="90" />
+        <el-table-column label="来源" width="130"><template #default="{ row }">{{ sourceLabel(row.source) }}</template></el-table-column>
         <el-table-column label="可信度" width="80">
           <template #default="{ row }">
             <el-progress :percentage="row.confidence" :stroke-width="8" :show-text="false" />
@@ -44,9 +44,9 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('crm.lead.manage') && row.status === 0" size="small" type="success" link @click="handleStatus(row.id, 1)">确认</el-button>
-            <el-button v-if="can('crm.lead.manage') && row.status === 0" size="small" type="info" link @click="handleStatus(row.id, 2)">忽略</el-button>
-            <el-button v-if="can('crm.lead.manage') && row.status === 1" size="small" type="primary" link @click="handleStatus(row.id, 3)">转商机</el-button>
+            <el-button v-if="can('crm.lead.manage') && !isWebsiteReminder(row.source) && crmEnumNumber(row.status, signalStatuses) === 0" size="small" type="success" link @click="handleStatus(row.id, 1)">确认</el-button>
+            <el-button v-if="can('crm.lead.manage') && !isWebsiteReminder(row.source) && crmEnumNumber(row.status, signalStatuses) === 0" size="small" type="info" link @click="handleStatus(row.id, 2)">忽略</el-button>
+            <el-button v-if="can('crm.lead.manage') && crmEnumNumber(row.status, signalStatuses) === 1 && !isWebsiteReminder(row.source)" size="small" type="primary" link @click="handleStatus(row.id, 3)">标记已转商机</el-button>
             <el-button size="small" link @click="showDetail(row)">详情</el-button>
           </template>
         </el-table-column>
@@ -70,10 +70,10 @@
     <el-drawer v-model="detailVisible" title="信号详情与证据" size="560px">
       <div v-if="currentSignal" class="detail">
         <p><b>企业：</b>{{ currentSignal.companyName }}</p>
-        <p><b>类型：</b>{{ typeLabels[currentSignal.type] }}</p>
+        <p><b>类型：</b>{{ typeLabels[crmEnumNumber(currentSignal.type, signalTypes)] }}</p>
         <p><b>标题：</b>{{ currentSignal.title }}</p>
-        <p><b>来源：</b>{{ currentSignal.source }}</p>
-        <p v-if="currentSignal.sourceUrl"><b>来源URL：</b><el-link :href="currentSignal.sourceUrl" target="_blank">{{ currentSignal.sourceUrl }}</el-link></p>
+        <p><b>来源：</b>{{ sourceLabel(currentSignal.source) }}</p>
+        <p v-if="currentSignal.sourceUrl"><b>来源URL：</b><el-link v-if="safeExternalHttpUrl(currentSignal.sourceUrl)" :href="safeExternalHttpUrl(currentSignal.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ currentSignal.sourceUrl }}</el-link><span v-else>{{ currentSignal.sourceUrl }}</span></p>
         <p><b>可信度：</b>{{ currentSignal.confidence }}%</p>
         <p><b>采集时间：</b>{{ formatTime(currentSignal.collectedAt) }}</p>
         <p v-if="currentSignal.eventAt"><b>事件时间：</b>{{ formatTime(currentSignal.eventAt) }}</p>
@@ -91,8 +91,8 @@
         </div>
 
         <!-- 验证状态 -->
-        <el-divider content-position="left">验证状态</el-divider>
-        <p>
+        <el-divider v-if="!isWebsiteReminder(currentSignal.source)" content-position="left">验证状态</el-divider>
+        <p v-if="!isWebsiteReminder(currentSignal.source)">
           <b>当前状态：</b>
           <el-tag :type="verificationTag(currentSignal.verificationStatus)" size="small">
             {{ verificationLabel(currentSignal.verificationStatus) }}
@@ -101,18 +101,25 @@
             {{ formatTime(currentSignal.verifiedAt) }}
           </span>
         </p>
-        <p style="color:#909399;font-size:12px">
+        <p v-if="!isWebsiteReminder(currentSignal.source)" style="color:#909399;font-size:12px">
           注意：未查询到证件不代表企业没有证件；禁止将推测性缺口当作已证实事实。
         </p>
-        <div v-if="can('crm.lead.manage')" class="verify-actions">
+        <div v-if="can('crm.lead.manage') && !isWebsiteReminder(currentSignal.source)" class="verify-actions">
           <el-button size="small" type="success" @click="verify(1)">已确认存在</el-button>
           <el-button size="small" type="danger" @click="verify(2)">已确认不存在</el-button>
           <el-button size="small" type="warning" @click="verify(3)">未查到</el-button>
           <el-button size="small" type="info" @click="verify(4)">数据过期</el-button>
           <el-button size="small" @click="verify(5)">需人工核实</el-button>
         </div>
+        <p v-if="isWebsiteReminder(currentSignal.source)" style="color:#909399;font-size:12px">网站提醒需核对报告和页面证据；这里不作证件存在性判断，也不代表 AI 平台推荐变化。</p>
+        <div v-if="isWebsiteReminder(currentSignal.source)" class="verify-actions">
+          <el-button type="primary" size="small" @click="openWebsiteTarget(currentSignal)">查看对应报告与证据</el-button>
+          <el-button v-if="can('crm.lead.manage') && crmEnumNumber(currentSignal.status, signalStatuses) === 0" type="success" size="small" @click="handleWebsiteDecision(currentSignal, 'reviewed')">已核对</el-button>
+          <el-button v-if="can('crm.lead.manage') && crmEnumNumber(currentSignal.status, signalStatuses) === 0" size="small" @click="handleWebsiteDecision(currentSignal, 'ignored')">忽略</el-button>
+        </div>
 
         <el-divider v-if="currentSignal.handleNote" />
+        <p v-if="currentSignal.handledAt"><b>处理记录：</b>{{ currentSignal.handledBy || '未知' }} · {{ formatTime(currentSignal.handledAt) }}</p>
         <p v-if="currentSignal.handleNote"><b>处理备注：</b>{{ currentSignal.handleNote }}</p>
       </div>
     </el-drawer>
@@ -121,11 +128,23 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { ElMessage } from 'element-plus';
-import { listSignals, updateSignalStatus, updateSignalVerification, type SignalDto } from '../../api/crm';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { useRoute, useRouter } from 'vue-router';
+import { decideWebsiteSignal, getWebsiteSignalDetail, getWebsiteSignalTarget, listSignals, updateSignalStatus, updateSignalVerification, type SignalDto } from '../../api/crm';
 import { useCrmPermission } from '../../composables/useCrmPermission';
+import { safeExternalHttpUrl } from '../../utils/externalUrl';
+// Aliased so the templates (which reference these names directly) stay
+// unchanged; the definitions themselves now live in crmEnum.ts.
+import {
+  crmEnumNumber, crmLabel,
+  signalTypeLabels as typeLabels, signalTypeValues as signalTypes,
+  signalStatusLabels, signalStatusValues as signalStatuses,
+  verificationStatusLabels, verificationStatusValues as verificationStatuses,
+} from '../../utils/crmEnum';
 
 const can = useCrmPermission();
+const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const signals = ref<SignalDto[]>([]);
 const total = ref(0);
@@ -136,18 +155,16 @@ const filterType = ref<number | undefined>();
 const keyword = ref('');
 const detailVisible = ref(false);
 const currentSignal = ref<SignalDto | null>(null);
-
-const typeLabels: Record<number, string> = {
-  0: '网站异常', 1: '官网缺失', 2: 'GEO变化', 3: 'ICP变动',
-  4: '许可证到期', 5: '政府处罚', 6: '招标采购', 7: '政策补贴',
-  8: '招聘扩张', 9: '外贸信息', 99: '其他'
-};
+function isWebsiteReminder(source: string): boolean { return source.startsWith('website-'); }
+function sourceLabel(source: string): string {
+  return ({ 'website-diagnostic': '网站技术复检', 'website-content-review': '内容待核对', 'website-content-change': '内容差异待核对' } as Record<string, string>)[source] || source;
+}
 
 function statusLabel(s: number): string {
-  return ['待处理', '已确认', '已忽略', '已转商机'][s] || String(s);
+  return crmLabel(signalStatusLabels, s, signalStatuses, String(s));
 }
 function statusTag(s: number): string {
-  return ['warning', 'success', 'info', 'primary'][s] || 'info';
+  return ['warning', 'success', 'info', 'primary'][crmEnumNumber(s, signalStatuses)] || 'info';
 }
 function formatTime(t?: string): string {
   if (!t) return '-';
@@ -170,7 +187,7 @@ async function loadData() {
   }
 }
 
-async function handleStatus(id: number, status: number) {
+async function handleStatus(id: string, status: number) {
   try {
     await updateSignalStatus(id, status);
     ElMessage.success('操作成功');
@@ -180,16 +197,37 @@ async function handleStatus(id: number, status: number) {
   }
 }
 
+async function openWebsiteTarget(row: SignalDto) {
+  try {
+    await getWebsiteSignalTarget(row.id);
+    detailVisible.value = false;
+    await router.push({ path: '/crm/identity-candidates', query: { websiteSignalId: row.id } });
+  } catch (error: any) { ElMessage.error(error?.detail || '对应报告或证据已不可访问'); }
+}
+
+async function handleWebsiteDecision(row: SignalDto, action: 'reviewed' | 'ignored') {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      action === 'reviewed' ? '请先核对报告与证据，再填写至少 10 字的处理结论。' : '请填写至少 10 字的忽略理由。',
+      action === 'reviewed' ? '标记已核对' : '忽略网站提醒',
+      { inputValidator: text => text.trim().length >= 10 || '处理理由至少 10 字' });
+    await decideWebsiteSignal(row.id, action, value.trim());
+    detailVisible.value = false;
+    await loadData();
+    ElMessage.success(action === 'reviewed' ? '已记录核对结果' : '已记录忽略理由');
+  } catch (error: any) { if (error !== 'cancel') ElMessage.error(error?.detail || '处理失败，请刷新后重试'); }
+}
+
 function showDetail(row: SignalDto) {
   currentSignal.value = row;
   detailVisible.value = true;
 }
 
 function verificationLabel(s: number): string {
-  return ['未查询', '已确认存在', '已确认不存在', '未查到', '数据过期', '需人工核实'][s] || String(s);
+  return crmLabel(verificationStatusLabels, s, verificationStatuses, String(s));
 }
 function verificationTag(s: number): string {
-  return ['info', 'success', 'danger', 'warning', 'info', 'warning'][s] || 'info';
+  return ['info', 'success', 'danger', 'warning', 'info', 'warning'][crmEnumNumber(s, verificationStatuses)] || 'info';
 }
 async function verify(status: number) {
   if (!currentSignal.value) return;
@@ -205,7 +243,14 @@ async function verify(status: number) {
   }
 }
 
-onMounted(loadData);
+onMounted(async () => {
+  await loadData();
+  const id = route.query.websiteSignalId;
+  if (typeof id === 'string' && /^\d+$/.test(id)) {
+    try { showDetail(await getWebsiteSignalDetail(id)); }
+    catch (error: any) { ElMessage.error(error?.detail || '提醒已无法访问'); }
+  }
+});
 </script>
 
 <style scoped>

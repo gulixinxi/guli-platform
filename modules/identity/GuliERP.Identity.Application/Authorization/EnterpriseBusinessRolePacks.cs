@@ -55,6 +55,7 @@ public static class EnterpriseBusinessRolePacks
     public const string PurchOperatorRoleName = "ERP Purchase Operator";
     public const string CrmReadOnlyRoleCode = "CRM_READONLY";
     public const string CrmOperatorRoleCode = "CRM_OPERATOR";
+    public const string CrmIdentityReviewerRoleCode = "CRM_IDENTITY_REVIEWER";
 
     // GULIERP_SYSTEM_ADMIN_PACK_BOUNDARY_001 (G3-R1C, 2026-08-26):
     // The ERP_SYSTEM_ADMIN role pack is now ALSO exposed as an
@@ -186,6 +187,13 @@ public static class EnterpriseBusinessRolePacks
             "crm.deal.read", "crm.deal.manage",
             "crm.activity.read", "crm.activity.manage",
         });
+
+    // Identity approval is assigned separately from ordinary CRM lead management.
+    public static readonly EnterpriseBusinessRolePack CrmIdentityReviewer = new(
+        CrmIdentityReviewerRoleCode,
+        "CRM Identity Reviewer",
+        "Review enterprise identity evidence and approve promotion of confirmed candidates.",
+        new[] { "crm.lead.read", "crm.identity.review" });
 
     /// <summary>
     /// The 4 operator packs (NOT including <see cref="SystemAdmin"/>)

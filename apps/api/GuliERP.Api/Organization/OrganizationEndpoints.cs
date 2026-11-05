@@ -4,6 +4,7 @@ using GuliERP.Identity.Application.Employee;
 using GuliERP.Identity.Application.EnterpriseOrganization;
 using GuliERP.Identity.Domain.Enums;
 using GuliERP.Foundation.Kernel;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -143,8 +144,20 @@ public static class OrganizationEndpoints
         group.MapPost("/users", async (
             [FromBody] CreateEnterpriseUserRequest request,
             IEnterpriseOrganizationAdminService admin,
+            IAuthorizationService authorization,
+            IRequestContextAccessor requestContext,
+            HttpContext http,
             CancellationToken ct) =>
-            await SafeMutationAsync(() => admin.CreateUserAsync(request, ct)))
+        {
+            if (request.RoleCodes is { Count: > 0 }
+                && !(await authorization.AuthorizeAsync(
+                    http.User, GuliErpAuthorizationPolicies.IdentityRoleAssign)).Succeeded)
+            {
+                return ForbiddenProblem(requestContext);
+            }
+
+            return await SafeMutationAsync(() => admin.CreateUserAsync(request, ct));
+        })
             .RequireAuthorization(GuliErpAuthorizationPolicies.IdentityUserManage);
 
         group.MapPut("/users/{userId:long}", async (
@@ -173,6 +186,18 @@ public static class OrganizationEndpoints
             IEnterpriseOrganizationAdminService admin,
             CancellationToken ct) =>
             await SafeVoidMutationAsync(() => admin.EnsureCrmOperatorRoleAsync(ct)))
+            .RequireAuthorization(GuliErpAuthorizationPolicies.IdentityRoleAssign);
+
+        group.MapPost("/roles/crm-identity-reviewer", async (
+            IEnterpriseOrganizationAdminService admin,
+            CancellationToken ct) =>
+            await SafeVoidMutationAsync(() => admin.EnsureCrmIdentityReviewerRoleAsync(ct)))
+            .RequireAuthorization(GuliErpAuthorizationPolicies.IdentityRoleAssign);
+
+        group.MapPost("/roles/crm-read-only", async (
+            IEnterpriseOrganizationAdminService admin,
+            CancellationToken ct) =>
+            await SafeVoidMutationAsync(() => admin.EnsureCrmReadOnlyRoleAsync(ct)))
             .RequireAuthorization(GuliErpAuthorizationPolicies.IdentityRoleAssign);
 
         group.MapPost("/role-assignments", async (

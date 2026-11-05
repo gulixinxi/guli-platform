@@ -68,6 +68,14 @@
 .gs-rail-item:hover .gs-rail-icon {
   color: var(--sidebar-fg-hover);
 }
+.gs-rail-item.is-disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.gs-rail-item.is-disabled:hover {
+  color: var(--sidebar-fg);
+  background: transparent;
+}
 .gs-rail-item.is-active {
   color: #FFFFFF;                         /* white label */
   font-weight: 600;                       /* SHELL_FINAL_POLISH_002A: weight bump for selected */

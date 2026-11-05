@@ -7,6 +7,18 @@
 - Do not migrate Admin.NET.
 - Do not create Admin.NET adapters.
 - Do not copy legacy Sales, Purchase or Inventory code.
+- Do not write to the GuliERP Next PostgreSQL database (`192.168.2.228:5432`,
+  `gulierp_g2_003_test`). As of 2026-10-25 it is in active use by other
+  development tasks. No `INSERT` / `UPDATE` / `DELETE`, no
+  `dotnet ef database update`, no seed execution, and no test or harness run
+  that mutates it. Read-only inspection only, under the Wrong-DB Guard in
+  `docs/governance/DATABASE_TARGET_REGISTRY.md` §5.1.
+- Do not write to the Onlyit reference source (`D:\guli\oit\db\*.mdb`,
+  `D:\guli\oit\backups\*.mdb`) and do not call Onlyit write services
+  (`sf_*_save`, `sf_voucher_create`, `sf_voucher_oper`). Onlyit write
+  services do not reject missing parameters — they execute the save path
+  with empty values and persist rows. Extraction from Onlyit is read-only
+  (`SELECT *` via read-only ADO, or `sf_run_sql` with `sqlcmd`).
 
 ## Single Writer Areas
 

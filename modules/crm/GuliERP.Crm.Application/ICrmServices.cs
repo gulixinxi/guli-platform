@@ -31,6 +31,7 @@ public interface ICompanyService
     Task<CompanyDto?> UpdateAsync(long id, UpdateCompanyRequest request, CancellationToken ct);
     Task<bool> DeleteAsync(long id, CancellationToken ct);
     Task<bool> AssignAsync(long id, long ownerId, CancellationToken ct);
+    Task<bool> ClearOwnerAsync(long id, CancellationToken ct);
     Task<bool> UpdateTagsAsync(long id, List<string> tags, CancellationToken ct);
     Task<bool> UpdateStatusAsync(long id, Domain.Enums.CustomerStatus status, CancellationToken ct);
     Task<bool> UpdateRatingAsync(long id, Domain.Enums.IntentRating rating, bool isSuggested, CancellationToken ct);
@@ -64,6 +65,12 @@ public interface IDealService
     Task<bool> UpdateStageAsync(long id, Domain.Enums.DealStage stage, CancellationToken ct);
     Task<bool> WinAsync(long id, CancellationToken ct);
     Task<bool> LoseAsync(long id, Domain.Enums.LostReason reason, CancellationToken ct);
+
+    /// <summary>
+    /// 专门的负责人分配操作：<paramref name="ownerId"/> 非 null ⇒ 分配给该负责人；
+    /// 为 null ⇒ 清空负责人。调用方（API 层）必须先完成有效成员校验。
+    /// </summary>
+    Task<bool> AssignOwnerAsync(long id, long? ownerId, long? actorId, CancellationToken ct);
 }
 
 /// <summary>
@@ -78,6 +85,12 @@ public interface IActivityService
     Task<ActivityDto?> UpdateAsync(long id, UpdateActivityRequest request, CancellationToken ct);
     Task<bool> DeleteAsync(long id, CancellationToken ct);
     Task<bool> CompleteTaskAsync(long id, CancellationToken ct);
+
+    /// <summary>
+    /// 专门的负责人分配操作：<paramref name="ownerId"/> 非 null ⇒ 分配给该负责人；
+    /// 为 null ⇒ 清空负责人。调用方（API 层）必须先完成有效成员校验。
+    /// </summary>
+    Task<bool> AssignOwnerAsync(long id, long? ownerId, long? actorId, CancellationToken ct);
 }
 
 /// <summary>

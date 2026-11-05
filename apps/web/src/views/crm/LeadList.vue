@@ -105,10 +105,11 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="handleClaim(row)" v-if="can('crm.lead.claim') && row.status === 0">认领</el-button>
+            <el-button link type="primary" size="small" @click="openAssessment(row)">需求评估</el-button>
+            <el-button link type="primary" size="small" @click="handleClaim(row)" v-if="can('crm.lead.claim') && crmEnumNumber(row.status, LeadStatus) === LeadStatus.Pending">认领</el-button>
             <el-button v-if="can('crm.lead.manage')" link type="primary" size="small" @click="handleAssign(row)">分配</el-button>
-            <el-button link type="primary" size="small" @click="handleConvert(row)" v-if="can('crm.lead.convert') && row.status !== 2 && row.status !== 3">转化</el-button>
-            <el-button link type="warning" size="small" @click="handleDiscard(row)" v-if="can('crm.lead.manage') && row.status !== 3">废弃</el-button>
+            <el-button link type="primary" size="small" @click="handleConvert(row)" v-if="can('crm.lead.convert') && crmEnumNumber(row.status, LeadStatus) !== LeadStatus.Converted && crmEnumNumber(row.status, LeadStatus) !== LeadStatus.Discarded">转化</el-button>
+            <el-button link type="warning" size="small" @click="handleDiscard(row)" v-if="can('crm.lead.manage') && crmEnumNumber(row.status, LeadStatus) !== LeadStatus.Discarded">废弃</el-button>
             <el-button v-if="can('crm.lead.manage')" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -126,6 +127,70 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="showAssessment" :title="`需求初评 · ${assessmentLead?.companyName || ''}`" width="760px">
+      <el-alert type="info" :closable="false" title="四类方向分别判断。没有证据时保持未知；可能或已确认需求必须填写证据，保存不会自动创建商机。" />
+      <p v-if="assessmentOriginId" class="assessment-origin">关联单位反查记录 #{{ assessmentOriginId }}</p>
+      <div v-for="item in assessmentRows" :key="item.category" class="assessment-row">
+        <div class="assessment-row-header">
+          <strong>{{ assessmentCategoryLabel(item.category) }}</strong>
+          <span>版本 {{ item.version }}{{ item.reviewedAt ? ` · ${new Date(item.reviewedAt).toLocaleString()}` : '' }}</span>
+        </div>
+        <el-select v-model="item.state" placeholder="评估状态" style="width:180px">
+          <el-option label="未知" value="unknown" /><el-option label="待核验" value="pending" />
+          <el-option label="可能有需求" value="potential" /><el-option label="已确认需求" value="confirmed" />
+          <el-option label="不适用" value="not_applicable" />
+        </el-select>
+        <el-select v-model="item.confidence" clearable placeholder="置信度" style="width:130px;margin-left:8px">
+          <el-option label="低" value="low" /><el-option label="中" value="medium" /><el-option label="高" value="high" />
+        </el-select>
+        <div class="evidence-block" style="margin-top:8px">
+          <div class="evidence-head">
+            <span>证据</span>
+            <el-button v-if="can('crm.lead.manage')" size="small" link type="primary" @click="addEvidenceItem(item)">+ 添加证据</el-button>
+          </div>
+          <div v-for="(ev, i) in item.evidenceItems" :key="i" class="evidence-row">
+            <el-select v-model="ev.type" :disabled="!can('crm.lead.manage')" placeholder="类型" style="width:130px">
+              <el-option v-for="o in evidenceTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-select v-model="ev.verificationStatus" :disabled="!can('crm.lead.manage')" placeholder="核验状态" style="width:150px">
+              <el-option v-for="o in evidenceVerificationOptions" :key="o.value" :label="o.label" :value="o.value" />
+            </el-select>
+            <el-input v-model="ev.url" :disabled="!can('crm.lead.manage')" placeholder="来源链接（可选）" style="flex:1;min-width:180px" />
+            <el-input v-model="ev.note" :disabled="!can('crm.lead.manage')" type="textarea" :rows="1" maxlength="2000" placeholder="证据说明" style="flex:1;min-width:180px" />
+            <el-button v-if="can('crm.lead.manage')" size="small" link type="danger" @click="item.evidenceItems.splice(i, 1)">删除</el-button>
+          </div>
+          <div v-if="!item.evidenceItems?.length" class="evidence-empty">暂无证据。可能/已确认需求至少需要一条。</div>
+        </div>
+        <el-input v-model="item.reason" maxlength="1000" placeholder="判断理由" style="margin-top:8px" />
+        <el-input v-model="item.nextAction" maxlength="500" placeholder="下一步核验或联系动作" style="margin-top:8px" />
+        <el-button v-if="can('crm.lead.manage')" type="primary" size="small" :loading="savingAssessment === item.category" style="margin-top:8px" @click="saveAssessment(item)">保存本项</el-button>
+        <el-button v-if="item.state === 'confirmed' && item.id && can('crm.deal.manage')" size="small" type="success" style="margin-top:8px" @click="openDealFromAssessment(item)">创建商机</el-button>
+        <el-button v-if="item.category === 'website' || item.category === 'geo'" size="small" style="margin-top:8px" @click="openVisitHandoff(item)">拜访/项目交接预检</el-button>
+        <el-button size="small" style="margin-top:8px" @click="toggleAssessmentHistory(item.category)">{{ expandedHistoryCategory === item.category ? '收起历史' : '查看历史' }}</el-button>
+        <el-table v-if="expandedHistoryCategory === item.category" :data="assessmentHistory[item.category] || []" size="small" stripe style="margin-top:8px">
+          <el-table-column prop="version" label="版本" width="65" />
+          <el-table-column prop="state" label="状态" width="100"><template #default="{ row }">{{ assessmentStateLabel(row.state) }}</template></el-table-column>
+          <el-table-column prop="evidence" label="证据(旧)" width="140" show-overflow-tooltip />
+          <el-table-column prop="reason" label="理由" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="reviewerId" label="审核人" width="95"><template #default="{ row }">#{{ row.reviewerId }}</template></el-table-column>
+          <el-table-column prop="reviewedAt" label="时间" width="160"><template #default="{ row }">{{ new Date(row.reviewedAt).toLocaleString() }}</template></el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+
+    <el-dialog v-model="showVisitHandoff" title="拜访与建站/GEO 交接预检" width="620px" append-to-body>
+      <el-alert type="info" :closable="false" title="只读预检：不上传拜访文件、不创建信号、商机或工单，也不连接 NAS/ERP。" />
+      <p>{{ assessmentLead?.companyName }} · {{ assessmentCategoryLabel(handoffCategory) }}</p>
+      <div class="handoff-controls">
+        <el-select v-model="handoffKind" style="width:160px"><el-option label="拜访外部引用" value="visit" /><el-option label="网站报告 ID" value="website_report" /></el-select>
+        <el-input v-model="handoffReference" :placeholder="handoffKind === 'visit' ? '仅填外部编号，不填路径或文件内容' : '填写已完成报告 ID'" maxlength="100" style="flex:1" />
+        <el-button :loading="handoffLoading" :disabled="!handoffReference.trim()" @click="previewVisitHandoff">预检</el-button>
+      </div>
+      <el-alert v-if="handoffPreview" type="warning" :closable="false" :title="`交接状态：${handoffPreview.handoffStatus === 'pending_sync' ? '待同步' : handoffPreview.handoffStatus}`" />
+      <p v-if="handoffPreview" class="assessment-origin">来源核验：{{ handoffPreview.sourceVerification === 'confirmed_internal_report' ? '库内报告已核对归属' : '外部拜访引用未核验' }}；需求评估：{{ handoffPreview.assessmentConfirmed ? '已确认' : '未确认' }}；现有商机：{{ handoffPreview.existingDeal ? '有' : '无' }}。</p>
+      <ul v-if="handoffPreview"><li v-for="reason in handoffPreview.blockers" :key="reason">{{ reason }}</li></ul>
+    </el-dialog>
 
     <el-dialog v-model="showCreate" title="新建线索" width="600px">
       <el-form :model="form" label-width="100px">
@@ -295,15 +360,179 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Search, Refresh, Upload, UploadFilled, Download } from '@element-plus/icons-vue';
 import { exportToExcel } from '../../utils/exportExcel';
 import { listLeads, createLead, deleteLead, claimLead, assignLead, discardLead, convertLead, batchImportLeads, listTeamMembers, updateLeadTags } from '../../api/crm';
 import type { LeadDto, CreateLeadRequest, ConvertLeadRequest } from '../../types/crm';
+import { LeadStatus, SubjectType, IntentRating, CompanyCity, CompanyIndustry } from '../../types/crm';
+import {
+  crmEnumNumber, crmLabel, crmTextLabel,
+  assessmentCategoryLabels, assessmentStateLabels, businessCategoryForAssessment,
+  leadStatusLabels, subjectTypeLabels,
+  evidenceTypeLabels, evidenceVerificationLabels, evidenceTypeOptions, evidenceVerificationOptions,
+} from '../../utils/crmEnum';
 import type { BatchImportResult, TeamMember } from '../../api/crm';
 import { readSpreadsheetRows } from '../../utils/spreadsheet';
 import { useCrmPermission } from '../../composables/useCrmPermission';
+import { apiGet, apiPost, apiPut } from '../../api/http';
+
+interface EvidenceItem {
+  id?: string;
+  type: string;
+  url?: string | null;
+  collectedAt?: string | null;
+  verificationStatus: string;
+  note?: string | null;
+  version: number;
+}
+
+interface DemandAssessmentRow {
+  id?: string;
+  category: string;
+  state: string;
+  confidence?: string;
+  /** @deprecated 旧自由文本字段，服务端已停止写入。新数据见 evidenceItems。 */
+  evidence?: string;
+  evidenceItems: EvidenceItem[];
+  reason?: string;
+  nextAction?: string;
+  reviewedAt?: string;
+  version: number;
+}
+
+const showAssessment = ref(false);
+const router = useRouter();
+const assessmentLead = ref<LeadDto | null>(null);
+const assessmentRows = ref<DemandAssessmentRow[]>([]);
+const assessmentOriginId = ref<number | null>(null);
+const savingAssessment = ref<string | null>(null);
+const expandedHistoryCategory = ref<string | null>(null);
+const assessmentHistory = ref<Record<string, DemandAssessmentRevision[]>>({});
+interface VisitHandoffPreview { handoffStatus: string; sourceVerification: string; assessmentConfirmed: boolean; existingDeal: boolean; blockers: string[] }
+const showVisitHandoff = ref(false);
+const handoffCategory = ref('website');
+const handoffKind = ref('visit');
+const handoffReference = ref('');
+const handoffLoading = ref(false);
+const handoffPreview = ref<VisitHandoffPreview | null>(null);
+function openVisitHandoff(item: DemandAssessmentRow) {
+  handoffCategory.value = item.category;
+  handoffKind.value = 'visit';
+  handoffReference.value = '';
+  handoffPreview.value = null;
+  showVisitHandoff.value = true;
+}
+async function previewVisitHandoff() {
+  if (!assessmentLead.value) return;
+  handoffLoading.value = true;
+  try {
+    handoffPreview.value = await apiPost<VisitHandoffPreview>(`/api/v1/crm/leads/${assessmentLead.value.id}/visit-handoff-preview`, {
+      category: handoffCategory.value, referenceKind: handoffKind.value, referenceId: handoffReference.value.trim()
+    });
+  } catch (error: any) { handoffPreview.value = null; ElMessage.error(error?.detail || '交接预检失败'); }
+  finally { handoffLoading.value = false; }
+}
+function assessmentCategoryLabel(category: string) { return crmTextLabel(assessmentCategoryLabels, category, category); }
+function assessmentStateLabel(state: string) { return crmTextLabel(assessmentStateLabels, state, state); }
+function evidenceTypeLabel(t: string) { return crmTextLabel(evidenceTypeLabels, t, t); }
+function evidenceVerificationLabel(v: string) { return crmTextLabel(evidenceVerificationLabels, v, v); }
+
+function addEvidenceItem(item: DemandAssessmentRow) {
+  if (!item.evidenceItems) item.evidenceItems = [];
+  item.evidenceItems.push({
+    type: 'manual',
+    verificationStatus: 'not_verified',
+    version: item.version,
+  });
+}
+
+function openDealFromAssessment(item: DemandAssessmentRow) {
+  if (!assessmentLead.value?.convertedToCompanyId) {
+    ElMessage.info('请先将线索转为客户，再创建商机。');
+    showAssessment.value = false;
+    return;
+  }
+  const category = businessCategoryForAssessment(item.category);
+  if (category === null) {
+    ElMessage.warning(`评估品类「${item.category}」没有对应的业务品类，无法建商机`);
+    return;
+  }
+  router.push({ path: '/crm/deals', query: {
+    action: 'create', companyId: String(assessmentLead.value.convertedToCompanyId),
+    category: String(category), suggestion: assessmentCategoryLabel(item.category),
+    sourceAssessmentId: item.id, sourceVersion: String(item.version)
+  } });
+  showAssessment.value = false;
+}
+
+interface DemandAssessmentRevision extends DemandAssessmentRow { reviewerId: number; reviewedAt: string; }
+
+async function toggleAssessmentHistory(category: string) {
+  if (expandedHistoryCategory.value === category) { expandedHistoryCategory.value = null; return; }
+  if (!assessmentLead.value) return;
+  try {
+    assessmentHistory.value[category] = await apiGet<DemandAssessmentRevision[]>(
+      `/api/v1/crm/leads/${assessmentLead.value.id}/demand-assessments/${category}/history`);
+    expandedHistoryCategory.value = category;
+  } catch {
+    ElMessage.error('评估历史加载失败');
+  }
+}
+
+async function openAssessment(lead: LeadDto) {
+  assessmentLead.value = lead;
+  try {
+    const data = await apiGet<{ sourceReverseLookupRecordId?: number; items: DemandAssessmentRow[] }>(`/api/v1/crm/leads/${lead.id}/demand-assessments`);
+    assessmentRows.value = data.items;
+    assessmentOriginId.value = data.sourceReverseLookupRecordId ?? null;
+    expandedHistoryCategory.value = null;
+    assessmentHistory.value = {};
+    showAssessment.value = true;
+  } catch {
+    ElMessage.error('需求评估加载失败');
+  }
+}
+
+async function saveAssessment(item: DemandAssessmentRow) {
+  if (!assessmentLead.value) return;
+  const items = item.evidenceItems ?? [];
+  // The server rule, mirrored: 可能/已确认 needs at least one STRUCTURED
+  // evidence row. Checking only "something was typed" was the old contract.
+  if (['potential', 'confirmed'].includes(item.state) && items.length === 0) {
+    ElMessage.warning('可能或已确认需求必须至少添加一条证据');
+    return;
+  }
+  savingAssessment.value = item.category;
+  try {
+    const data = await apiPut<{ items: DemandAssessmentRow[] }>(
+      `/api/v1/crm/leads/${assessmentLead.value.id}/demand-assessments/${item.category}`,
+      { state: item.state, confidence: item.confidence || null, evidence: null,
+        evidenceItems: items.map(e => ({
+          evidenceType: e.type,
+          url: e.url || null,
+          collectedAt: e.collectedAt || null,
+          verificationStatus: e.verificationStatus,
+          note: e.note || null,
+        })),
+        reason: item.reason || null, nextAction: item.nextAction || null });
+    assessmentRows.value = data.items;
+    ElMessage.success('需求评估已保存');
+    if (expandedHistoryCategory.value === item.category) {
+      try {
+        assessmentHistory.value[item.category] = await apiGet<DemandAssessmentRevision[]>(
+          `/api/v1/crm/leads/${assessmentLead.value.id}/demand-assessments/${item.category}/history`);
+      } catch {
+        ElMessage.warning('评估已保存，历史记录刷新失败');
+      }
+    }
+  } catch {
+    ElMessage.error('需求评估保存失败');
+  } finally {
+    savingAssessment.value = null;
+  }
+}
 
 const route = useRoute();
 const can = useCrmPermission();
@@ -562,6 +791,11 @@ function handleConvert(row: LeadDto) {
   currentLead.value = row;
   convertForm.leadId = row.id;
   convertForm.fullName = row.companyName;
+  convertForm.creditCode = row.creditCode || '';
+  convertForm.city = row.city == null ? CompanyCity.Weifang : crmEnumNumber(row.city, CompanyCity);
+  convertForm.industry = row.industry == null ? inferIndustry(row.companyName) : crmEnumNumber(row.industry, CompanyIndustry);
+  convertForm.hasWebsite = Boolean(row.websiteDomain);
+  convertForm.remarks = row.remarks || '';
   showConvert.value = true;
 }
 
@@ -664,20 +898,20 @@ async function handleImport() {
   }
 }
 
-function statusLabel(s: number) { return ['待认领', '已认领', '已转化', '已废弃'][s] || '未知'; }
-function statusTagType(s: number) { return ['info', 'warning', 'success', 'danger'][s] || 'info'; }
+function statusLabel(s: number) { return crmLabel(leadStatusLabels, s, LeadStatus); }
+function statusTagType(s: number) { return ['info', 'warning', 'success', 'danger'][crmEnumNumber(s, LeadStatus)] || 'info'; }
 function subjectTypeLabel(s: number) {
-  const map: Record<number, string> = { 0: '企业', 1: '协会/商会', 2: '服务中心', 3: '专业服务', 4: '园区/基地', 5: '政府机关', 6: '事业单位', 7: '学历教育', 8: '教育培训', 10: '个体商户/门店', 99: '其他' };
-  return map[s] || '其他';
+  return crmLabel(subjectTypeLabels, s, SubjectType, '其他');
 }
 function subjectTypeTagType(s: number) {
+  s = crmEnumNumber(s, SubjectType);
   // 企业+教培+个体商户=success(绿)，渠道机会=warning(橙)，学历教育+事业单位+政府=info(灰)
   if (s === 0 || s === 8 || s === 10) return 'success';
   if (s >= 1 && s <= 4) return 'warning';
   return 'info';
 }
-function ratingLabel(r: number) { return ['A', 'B', 'C', 'D'][r] || '-'; }
-function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][r] || 'info'; }
+function ratingLabel(r: number) { return ['A', 'B', 'C', 'D'][crmEnumNumber(r, IntentRating)] || '-'; }
+function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][crmEnumNumber(r, IntentRating)] || 'info'; }
 function scoreTagType(score?: number) {
   if (score === undefined) return 'info';
   if (score >= 70) return 'success';
@@ -693,4 +927,9 @@ function formatDate(d: string) { return new Date(d).toLocaleString('zh-CN'); }
 .title { font-size: 16px; font-weight: 600; }
 .search-form { margin-bottom: 16px; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
+.assessment-origin { color: #606266; font-size: 12px; }
+.handoff-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.assessment-row { border-bottom: 1px solid #ebeef5; padding: 14px 0; }
+.assessment-row-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.assessment-row-header span { color: #909399; font-size: 12px; }
 </style>

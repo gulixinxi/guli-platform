@@ -11,6 +11,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!--
+      R42: the owner guard reads Identity's user table and company
+      membership table. EF Core InMemory lets us seed those rows and
+      assert the membership rule without touching PostgreSQL.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
   </ItemGroup>
 
   <ItemGroup>

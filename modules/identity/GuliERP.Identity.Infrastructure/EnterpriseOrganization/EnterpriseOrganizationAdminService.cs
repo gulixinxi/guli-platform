@@ -21,7 +21,16 @@ public sealed class EnterpriseOrganizationAdminService : IEnterpriseOrganization
     private readonly ICurrentCompany _currentCompany;
     private readonly ICurrentUser _currentUser;
 
-    public async Task EnsureCrmOperatorRoleAsync(CancellationToken ct = default)
+    public Task EnsureCrmOperatorRoleAsync(CancellationToken ct = default) =>
+        EnsureCrmRoleAsync(EnterpriseBusinessRolePacks.CrmOperator, ct);
+
+    public Task EnsureCrmIdentityReviewerRoleAsync(CancellationToken ct = default) =>
+        EnsureCrmRoleAsync(EnterpriseBusinessRolePacks.CrmIdentityReviewer, ct);
+
+    public Task EnsureCrmReadOnlyRoleAsync(CancellationToken ct = default) =>
+        EnsureCrmRoleAsync(EnterpriseBusinessRolePacks.CrmReadOnly, ct);
+
+    private async Task EnsureCrmRoleAsync(EnterpriseBusinessRolePack pack, CancellationToken ct)
     {
         var tenantId = RequireTenant();
         var companyId = _currentCompany.Id
@@ -29,7 +38,6 @@ public sealed class EnterpriseOrganizationAdminService : IEnterpriseOrganization
         await RequireCompanyAsync(tenantId, companyId, ct);
         await EnsureCurrentUserCanAccessCompanyAsync(companyId, ct);
 
-        var pack = EnterpriseBusinessRolePacks.CrmOperator;
         var role = await _db.Roles.SingleOrDefaultAsync(
             r => r.TenantId == tenantId && r.Code == pack.Code, ct);
         if (role is null)
@@ -53,7 +61,7 @@ public sealed class EnterpriseOrganizationAdminService : IEnterpriseOrganization
         }
         else if (role.Status != RoleStatus.Active || !role.IsSystem)
         {
-            throw new InvalidOperationException("CRM operator role exists with an incompatible status or type.");
+            throw new InvalidOperationException("CRM role exists with an incompatible status or type.");
         }
 
         var claims = await _db.RoleClaims
@@ -63,7 +71,7 @@ public sealed class EnterpriseOrganizationAdminService : IEnterpriseOrganization
         var existing = claims.Select(c => c.ClaimValue ?? string.Empty).ToArray();
         if (existing.Length != existing.Distinct(StringComparer.Ordinal).Count()
             || existing.Any(value => !expected.Contains(value)))
-            throw new InvalidOperationException("CRM operator role has unexpected permission claims.");
+            throw new InvalidOperationException("CRM role has unexpected permission claims.");
 
         foreach (var permission in pack.Permissions.Where(p => !existing.Contains(p, StringComparer.Ordinal)))
             _db.RoleClaims.Add(new IdentityRoleClaim<long>

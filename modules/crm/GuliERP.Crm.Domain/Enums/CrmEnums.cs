@@ -24,6 +24,8 @@ public enum BusinessCategory
     PoiAnnotation = 5,  // 地图标注（POI信息完善）
     DouyinAddress = 6,  // 抖音/快手地址添加
     StoreInfoComplete = 7, // 门店信息完善（多平台同步）
+    SocialMedia = 8,    // 自媒体运营
+    ForeignTradeLeads = 9, // 外贸获客
     Other = 99          // 其他
 }
 

@@ -212,6 +212,8 @@ public interface IEnterpriseOrganizationAdminService
         CancellationToken ct = default);
 
     Task EnsureCrmOperatorRoleAsync(CancellationToken ct = default);
+    Task EnsureCrmIdentityReviewerRoleAsync(CancellationToken ct = default);
+    Task EnsureCrmReadOnlyRoleAsync(CancellationToken ct = default);
 }
 
 public sealed class EnterpriseBootstrapAlreadyExistsException : Exception

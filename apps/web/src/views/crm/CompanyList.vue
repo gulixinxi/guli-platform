@@ -5,7 +5,7 @@
         <div class="card-header">
           <span class="title">客户主档</span>
           <div>
-            <el-button v-if="can('crm.company.export')" @click="handleExport" :icon="Download">导出Excel</el-button>
+          <el-button v-if="can('crm.company.export')" :disabled="loading || !!loadError || list.length === 0" @click="handleExport" :icon="Download">导出当前页</el-button>
             <el-button v-if="can('crm.company.manage')" type="primary" @click="showCreate = true" :icon="Plus">新建客户</el-button>
           </div>
         </div>
@@ -13,7 +13,7 @@
 
       <el-form :inline="true" :model="filters" class="search-form">
         <el-form-item label="关键词">
-          <el-input v-model="filters.keyword" placeholder="公司名/信用代码" clearable @keyup.enter="loadData" />
+          <el-input v-model="filters.keyword" placeholder="公司名/信用代码" clearable @keyup.enter="search" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="filters.status" placeholder="全部" clearable>
@@ -34,12 +34,16 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="loadData" :icon="Search">搜索</el-button>
+          <el-button type="primary" @click="search" :icon="Search">搜索</el-button>
           <el-button @click="resetFilters" :icon="Refresh">重置</el-button>
         </el-form-item>
       </el-form>
 
-      <el-table :data="list" v-loading="loading" stripe @row-click="goDetail">
+      <el-alert v-if="loadError" type="error" :closable="false" class="load-alert" :title="loadError">
+        <el-button link type="primary" @click="loadData">重新加载</el-button>
+      </el-alert>
+      <el-table v-if="!loadError" :data="list" v-loading="loading" stripe @row-click="goDetail">
+        <template #empty>没有符合条件的客户</template>
         <el-table-column prop="companyNo" label="客户编号" width="140" />
         <el-table-column prop="fullName" label="公司全称" min-width="200" />
         <el-table-column prop="creditCode" label="信用代码" width="160" show-overflow-tooltip />
@@ -65,7 +69,7 @@
             <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin:2px">
               {{ tag }}
             </el-tag>
-            <el-button v-if="can('crm.company.manage')" link type="primary" size="small" @click="handleEditTags(row)">编辑</el-button>
+            <el-button v-if="can('crm.company.manage')" link type="primary" size="small" @click.stop="handleEditTags(row)">编辑</el-button>
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="160">
@@ -74,19 +78,18 @@
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click.stop="goDetail(row)">详情</el-button>
-            <el-button v-if="can('crm.company.manage')" link type="danger" size="small" @click.stop="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination">
+      <div v-if="!loadError" class="pagination">
         <el-pagination
           v-model:current-page="filters.page"
           v-model:page-size="filters.pageSize"
           :total="total"
           :page-sizes="[10, 20, 50]"
           layout="total, sizes, prev, pager, next"
-          @size-change="loadData"
+          @size-change="onPageSizeChange"
           @current-change="loadData"
         />
       </div>
@@ -161,16 +164,20 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { Plus, Search, Refresh, Download } from '@element-plus/icons-vue';
-import { listCompanies, createCompany, deleteCompany, updateCompanyTags } from '../../api/crm';
+import { listCompanies, createCompany, updateCompanyTags } from '../../api/crm';
 import type { CompanyDto, CreateCompanyRequest } from '../../types/crm';
+import { CustomerStatus, IntentRating, CompanyCity, CompanyIndustry } from '../../types/crm';
+import { crmEnumNumber, crmLabel, customerStatusLabels, intentRatingLabels, companyCityLabels, companyIndustryLabels } from '../../utils/crmEnum';
 import { exportToExcel } from '../../utils/exportExcel';
 import { useCrmPermission } from '../../composables/useCrmPermission';
 
 const router = useRouter();
 const can = useCrmPermission();
 const loading = ref(false);
+const loadError = ref('');
+let latestRequest = 0;
 const creating = ref(false);
 const list = ref<CompanyDto[]>([]);
 const total = ref(0);
@@ -199,16 +206,32 @@ const form = reactive<CreateCompanyRequest>({
 });
 
 async function loadData() {
+  const request = ++latestRequest;
   loading.value = true;
+  loadError.value = '';
   try {
-    const result = await listCompanies(filters);
+    const result = await listCompanies({ ...filters });
+    if (request !== latestRequest) return;
     list.value = result.items;
     total.value = result.total;
   } catch (e: any) {
-    ElMessage.error(e.message || '加载失败');
+    if (request !== latestRequest) return;
+    list.value = [];
+    total.value = 0;
+    loadError.value = e?.status === 403 ? '没有当前公司客户的读取权限。' : '客户列表加载失败，请重新加载。';
   } finally {
-    loading.value = false;
+    if (request === latestRequest) loading.value = false;
   }
+}
+
+function search() {
+  filters.page = 1;
+  loadData();
+}
+
+function onPageSizeChange() {
+  filters.page = 1;
+  loadData();
 }
 
 function resetFilters() {
@@ -242,15 +265,6 @@ async function handleCreate() {
   }
 }
 
-async function handleDelete(row: CompanyDto) {
-  try {
-    await ElMessageBox.confirm('确认删除该客户？', '提示', { type: 'warning' });
-    await deleteCompany(row.id);
-    ElMessage.success('删除成功');
-    loadData();
-  } catch { /* cancelled */ }
-}
-
 function handleEditTags(row: CompanyDto) {
   tagsEditCompany.value = row;
   tagsList.value = [...(row.tags || [])];
@@ -280,12 +294,12 @@ async function saveTags() {
   }
 }
 
-function statusLabel(s: number) { return ['待联系', '跟进中', '已报价', '成交', '暂搁', '无效'][s] || '未知'; }
-function statusTagType(s: number) { return ['info', 'warning', 'primary', 'success', 'info', 'danger'][s] || 'info'; }
-function ratingLabel(r: number) { return ['A', 'B', 'C', 'D'][r] || '-'; }
-function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][r] || 'info'; }
-function cityLabel(c: number) { return ['潍坊', '青岛', '烟台', '济南', '淄博', '临沂', '山东其他', '省外'][c] || '其他'; }
-function industryLabel(i: number) { return ['机械制造', '纺织服装', '食品加工', '化工', '建材', '农业种植', '商贸流通', '服务业'][i] || '其他'; }
+function statusLabel(s: number) { return crmLabel(customerStatusLabels, s, CustomerStatus); }
+function statusTagType(s: number) { return ['info', 'warning', 'primary', 'success', 'info', 'danger'][crmEnumNumber(s, CustomerStatus)] || 'info'; }
+function ratingLabel(r: number) { return crmLabel(intentRatingLabels, r, IntentRating, '-'); }
+function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][crmEnumNumber(r, IntentRating)] || 'info'; }
+function cityLabel(c: number) { return crmLabel(companyCityLabels, c, CompanyCity, '其他'); }
+function industryLabel(i: number) { return crmLabel(companyIndustryLabels, i, CompanyIndustry, '其他'); }
 function formatDate(d: string) { return new Date(d).toLocaleString('zh-CN'); }
 
 onMounted(loadData);
@@ -305,7 +319,7 @@ function handleExport() {
     { key: 'email', label: '邮箱' },
     { key: 'createdAt', label: '创建时间' },
   ], '客户主档导出');
-  ElMessage.success(`已导出 ${list.value.length} 个客户`);
+  ElMessage.success(`已导出当前页 ${list.value.length} 个客户`);
 }
 </script>
 
@@ -314,5 +328,6 @@ function handleExport() {
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .title { font-size: 16px; font-weight: 600; }
 .search-form { margin-bottom: 16px; }
+.load-alert { margin-bottom: 16px; }
 .pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
 </style>

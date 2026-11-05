@@ -1,5 +1,7 @@
 using GuliERP.Identity.Domain.Entities;
 using GuliERP.Identity.Domain.Enums;
+using GuliERP.Identity.Application.Authorization;
+using GuliERP.Identity.Infrastructure.Authorization;
 using GuliERP.Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +17,7 @@ namespace GuliERP.Identity.Infrastructure.Seed;
 /// <para>
 /// The seed creates the canonical "GuliERP Demo" Tenant +
 /// "Default Company" + "Default Plant" + "Default OrganizationUnit"
-/// + 4 system Roles + 1 Platform Admin user (no Tenant).
+/// + system Roles including ERP_SYSTEM_ADMIN + 1 Platform Admin user (no Tenant).
 /// </para>
 ///
 /// <para>
@@ -76,6 +78,21 @@ public static class IdentitySeed
         await using var seedTransaction = db.Database.IsRelational()
             ? await db.Database.BeginTransactionAsync(ct)
             : null;
+
+        // The platform admin uses TenantId=0 as the host sentinel. The
+        // AspNetUsers.TenantId foreign key requires that sentinel to exist.
+        // Keep it closed so it cannot be used as a normal business tenant.
+        if (db.Database.IsRelational())
+        {
+            var now = DateTimeOffset.UtcNow;
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO identity.gulierp_tenant
+                    ("Id", "Code", "Name", "Description", "Status", "CreatedAt", "ModifiedAt", "ConcurrencyVersion")
+                VALUES (0, '__HOST__', 'Host identity sentinel', 'Reserved for platform administrator foreign keys.',
+                        {(int)TenantStatus.Closed}, {now}, {now}, 1)
+                ON CONFLICT ("Id") DO NOTHING
+                """, ct);
+        }
 
         // ----------------------------------------------------------------
         // 1. Default Tenant
@@ -168,7 +185,7 @@ public static class IdentitySeed
         var orgId = org.Id;
 
         // ----------------------------------------------------------------
-        // 5. System Roles (4) — Tenant-scoped (G2-003A DEC-ID-007)
+        // 5. System Roles — Tenant-scoped (G2-003A DEC-ID-007)
         // ----------------------------------------------------------------
         var roles = new (string Code, string Name, string Description)[]
         {
@@ -176,6 +193,9 @@ public static class IdentitySeed
             ("TENANT_ADMIN",    "Tenant Admin",    "Administrator of the Tenant."),
             ("COMPANY_ADMIN",   "Company Admin",   "Administrator of a specific Company."),
             ("NORMAL_USER",     "Normal User",     "Default role for any active User."),
+            (EnterpriseBusinessRolePacks.SystemAdminRoleCode,
+             EnterpriseBusinessRolePacks.SystemAdminRoleName,
+             EnterpriseBusinessRolePacks.SystemAdmin.Description),
         };
         var rolesByCode = new Dictionary<string, GuliErpRole>(StringComparer.Ordinal);
         foreach (var (code, name, description) in roles)
@@ -200,6 +220,13 @@ public static class IdentitySeed
         }
 
         await db.SaveChangesAsync(ct);
+        foreach (var permission in EnterpriseBusinessRolePacks.SystemAdmin.Permissions)
+            db.RoleClaims.Add(new IdentityRoleClaim<long>
+            {
+                RoleId = rolesByCode[EnterpriseBusinessRolePacks.SystemAdminRoleCode].Id,
+                ClaimType = GuliErpPermissionClaimTypes.Permission,
+                ClaimValue = permission,
+            });
 
         // ----------------------------------------------------------------
         // 6. Platform Admin user (host, no Tenant) + Tenant Admin user
@@ -322,6 +349,21 @@ public static class IdentitySeed
             TenantId = tenantId,
             UserId = tenantAdminId,
             RoleId = rolesByCode["COMPANY_ADMIN"].Id,
+            CompanyId = companyId,
+            ValidFrom = null,
+            ValidTo = null,
+            Status = AssignmentStatus.Active,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = null,
+            ModifiedAt = DateTimeOffset.UtcNow,
+            ModifiedBy = null,
+            ConcurrencyVersion = 1,
+        });
+        db.UserRoleAssignments.Add(new UserRoleAssignment
+        {
+            TenantId = tenantId,
+            UserId = tenantAdminId,
+            RoleId = rolesByCode[EnterpriseBusinessRolePacks.SystemAdminRoleCode].Id,
             CompanyId = companyId,
             ValidFrom = null,
             ValidTo = null,

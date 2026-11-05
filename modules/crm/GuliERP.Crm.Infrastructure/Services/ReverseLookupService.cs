@@ -73,28 +73,32 @@ public class ReverseLookupService
             try
             {
                 var icp = await _icpLookup.LookupAsync(domain, ct);
-                if (icp != null && icp.Found)
+                if (icp?.QueryStatus == "found")
                 {
                     result.HasIcp = true;
                     result.IcpCompanyName = icp.UnitName;
                     result.IcpLicense = icp.ServiceLicence;
                     result.IcpNature = icp.Nature;
                 }
-                else
+                else if (icp?.QueryStatus == "not_found")
                 {
                     result.HasIcp = false;
+                }
+                else
+                {
+                    result.HasIcp = null;
+                    result.Error = icp?.Error ?? "ICP 查询未完成";
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "ICP 查询失败: {Domain}", domain);
-                result.Error = $"ICP查询失败: {ex.Message}";
+                _logger.LogWarning("ICP 查询失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
+                result.Error = "ICP 查询失败，请稍后重试。";
             }
         }
         else
         {
-            result.HasWebsite = false;
-            result.WebsiteStatus = "无网址";
+            result.WebsiteStatus = "网址未提供，待核验";
         }
 
         // 3. 如果有域名，做网站检测
@@ -104,20 +108,21 @@ public class ReverseLookupService
             {
                 var url = domain.StartsWith("http") ? domain : $"https://{domain}";
                 var check = await _websiteCheck.CheckAsync(url, ct);
-                result.HasWebsite = check.Accessible;
+                result.HasWebsite = check.Error is null ? check.Accessible : null;
                 result.WebsiteTitle = check.Title;
                 result.HasHttps = check.HttpsSupported;
                 result.ResponseTimeMs = check.ResponseMs;
                 result.MobileUsable = check.HasViewport;
-                result.WebsiteStatus = check.Accessible ? "正常" : "无法访问";
+                result.WebsiteStatus = check.Error is not null ? "检测失败" : check.Accessible ? "正常" : "无法访问";
+                if (check.Error is not null) result.Error = check.Error;
                 if (!check.HttpsSupported && check.Accessible)
                     result.WebsiteStatus = "无HTTPS";
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "网站检测失败: {Domain}", domain);
+                _logger.LogWarning("网站检测失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
                 result.WebsiteStatus = "检测失败";
-                result.Error = string.IsNullOrEmpty(result.Error) ? $"网站检测失败: {ex.Message}" : result.Error;
+                result.Error = string.IsNullOrEmpty(result.Error) ? "网站检测失败，请稍后重试。" : result.Error;
             }
         }
 
@@ -128,12 +133,18 @@ public class ReverseLookupService
             {
                 var url = domain.StartsWith("http") ? domain : $"https://{domain}";
                 var geo = await _geoCheck.CheckAsync(url, ct);
-                result.GeoScore = geo.Score;
-                result.GeoBand = geo.Band;
+                if (geo.Checked && geo.Error is null)
+                {
+                    result.GeoScore = geo.Score;
+                    result.GeoBand = geo.Band;
+                }
+                else if (geo.Error is not null)
+                    result.Error = geo.Error;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "GEO 检测失败: {Domain}", domain);
+                _logger.LogWarning("GEO 检测失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
+                result.Error = "GEO 检测失败，请稍后重试。";
             }
         }
 
@@ -144,15 +155,17 @@ public class ReverseLookupService
 
     private static string GenerateSuggestion(ReverseLookupResult r)
     {
+        if (string.IsNullOrWhiteSpace(r.Domain))
+            return "官网信息未知：先核实官网，再评估建站需求";
         if (r.HasWebsite == false)
-            return "无官网：推荐企业建站服务";
+            return "输入网址当前无法访问：核实域名和网站状态后再评估建站需求";
         if (r.HasHttps == false)
-            return "无HTTPS：推荐网站升级/重建服务";
+            return "输入网址未检测到 HTTPS：核实配置后再评估网站升级需求";
         if (r.GeoScore.HasValue && r.GeoScore < 40)
-            return "GEO评分低：推荐GEO优化服务";
+            return "GEO初测评分偏低：复测并确认目标场景后再评估优化需求";
         if (r.WebsiteStatus == "无法访问")
-            return "网站无法访问：推荐网站重建服务";
-        return "网站正常：可跟进AI数字化服务";
+            return "输入网址无法访问：核实原因后再评估网站修复需求";
+        return "暂未发现明确需求：由销售结合企业资料继续核验";
     }
 
     private static string? ExtractDomain(string url)
@@ -191,6 +204,7 @@ public class ReverseLookupItem
 /// <summary>反查结果</summary>
 public class ReverseLookupResult
 {
+    public string? RecordId { get; set; }
     public string CompanyName { get; set; } = "";
     public string? InputWebsite { get; set; }
     public string? Domain { get; set; }

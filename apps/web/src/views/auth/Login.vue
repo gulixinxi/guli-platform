@@ -18,8 +18,8 @@
       <div class="rail-inner">
         <div class="brand-mark">谷</div>
         <div class="brand-text">
-          <div class="brand-title">GuliERP</div>
-          <div class="brand-subtitle">企业资源计划</div>
+          <div class="brand-title">Guli Platform</div>
+          <div class="brand-subtitle">谷粒业务平台</div>
         </div>
       </div>
     </div>
@@ -28,7 +28,7 @@
       <div class="login-card" role="main" aria-labelledby="login-title">
         <header class="login-head">
           <h1 id="login-title" class="login-title">欢迎登录</h1>
-          <p class="login-sub">请使用您的账号登录 GuliERP</p>
+          <p class="login-sub">请使用您的账号登录谷粒业务平台</p>
         </header>
 
         <el-alert
@@ -144,7 +144,7 @@
         </el-form>
 
         <footer class="login-foot">
-          <span>© 2026 GuliERP · 谷粒 ERP 有限公司</span>
+          <span>© 2026 Guli Platform</span>
           <span v-if="envHint" class="env-hint">{{ envHint }}</span>
         </footer>
       </div>

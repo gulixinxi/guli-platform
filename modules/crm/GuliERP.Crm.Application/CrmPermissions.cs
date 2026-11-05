@@ -9,6 +9,7 @@ public static class CrmPermissions
     public const string LeadConvert = "crm.lead.convert";
     public const string LeadImport = "crm.lead.import";
     public const string LeadExport = "crm.lead.export";
+    public const string IdentityReview = "crm.identity.review";
 
     // 企业/客户主档
     public const string CompanyRead = "crm.company.read";

@@ -695,7 +695,7 @@ async function loadExisting() {
     // and string 'active' encodings from the context facade).
     const uomsRes = await fetchSalesOrderUoms({ page: 1, pageSize: 100 });
     const activeUoms: Uom[] = uomsRes.items.filter(
-      (u) => String(u.status) === '1' || u.status === 'active',
+      (u) => String(u.status) === '1' || String(u.status).toLowerCase() === 'active',
     );
     const uomByIdMap: Record<string, Uom> = Object.fromEntries(
       activeUoms.map((u) => [u.id, u]),

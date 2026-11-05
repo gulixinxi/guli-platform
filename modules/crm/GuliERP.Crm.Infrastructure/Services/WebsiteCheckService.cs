@@ -23,51 +23,61 @@ public class WebsiteCheckService
     /// <summary>
     /// 检测单个网站。
     /// </summary>
-    public async Task<WebsiteCheckResult> CheckAsync(string domain, CancellationToken ct = default)
+    public virtual async Task<WebsiteCheckResult> CheckAsync(string domain, CancellationToken ct = default)
     {
         var result = new WebsiteCheckResult { Domain = domain };
 
-        // 去掉域名中的协议前缀和路径
-        domain = domain.Replace("http://", "").Replace("https://", "").TrimEnd('/').Split('/')[0];
+        // Validate before any network request. The production ConnectCallback rechecks
+        // the destination at connection time to prevent DNS rebinding.
+        domain = PublicWebTarget.Host(domain);
+        await PublicWebTarget.ResolveAsync(domain, ct);
         result.Domain = domain;
 
         // 1. 检测 HTTPS
         try
         {
             var httpsSw = Stopwatch.StartNew();
-            var httpsResp = await _http.GetAsync($"https://{domain}", ct);
+            using var httpsResp = await GetPublicAsync(new Uri($"https://{domain}"), ct);
             httpsSw.Stop();
             result.HttpsSupported = true;
             result.HttpsStatusCode = (int)httpsResp.StatusCode;
             result.HttpsResponseMs = (int)httpsSw.ElapsedMilliseconds;
             result.FinalUrl = httpsResp.RequestMessage?.RequestUri?.ToString() ?? "";
-            result.Html = await httpsResp.Content.ReadAsStringAsync(ct);
+            result.Html = await ReadLimitedAsync(httpsResp.Content, ct);
         }
         catch (Exception ex)
         {
-            _logger.LogInformation("HTTPS 检测失败 {Domain}: {Msg}", domain, ex.Message);
+            _logger.LogInformation("HTTPS 检测失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
             result.HttpsSupported = false;
 
             // 2. HTTPS 失败，尝试 HTTP
             try
             {
                 var httpSw = Stopwatch.StartNew();
-                var httpResp = await _http.GetAsync($"http://{domain}", ct);
+                using var httpResp = await GetPublicAsync(new Uri($"http://{domain}"), ct);
                 httpSw.Stop();
                 result.HttpStatusCode = (int)httpResp.StatusCode;
                 result.HttpResponseMs = (int)httpSw.ElapsedMilliseconds;
                 result.FinalUrl = httpResp.RequestMessage?.RequestUri?.ToString() ?? "";
-                result.Html = await httpResp.Content.ReadAsStringAsync(ct);
+                result.Html = await ReadLimitedAsync(httpResp.Content, ct);
             }
             catch (Exception ex2)
             {
-                _logger.LogWarning("网站完全无法访问 {Domain}: {Msg}", domain, ex2.Message);
+                _logger.LogWarning("网站完全无法访问 {Domain}: {ExceptionType}", domain, ex2.GetType().Name);
                 result.Accessible = false;
-                result.Error = ex2.Message;
+                result.Error = "网站连接失败，请稍后重试。";
+                result.TransientFailure = ex2 is HttpRequestException or TaskCanceledException or TimeoutException;
                 return result;
             }
         }
 
+        var status = result.HttpsStatusCode ?? result.HttpStatusCode;
+        if (status is < 200 or >= 300)
+        {
+            result.Error = $"网站返回 HTTP {status}，需人工核验。";
+            result.Issues.Add(result.Error);
+            return result;
+        }
         result.Accessible = true;
         result.ResponseMs = result.HttpsResponseMs ?? result.HttpResponseMs ?? 0;
 
@@ -108,6 +118,65 @@ public class WebsiteCheckService
         // 4. 汇总问题
         result.Issues = BuildIssues(result);
         return result;
+    }
+
+    /// <summary>Fetches only a fixed well-known path through the same guarded HTTP transport.</summary>
+    public virtual async Task<PassiveFileResult> FetchWellKnownAsync(string domain, string path, CancellationToken ct = default)
+    {
+        if (path is not ("/robots.txt" or "/sitemap.xml"))
+            throw new ArgumentException("仅允许读取固定的网站技术文件。");
+        domain = PublicWebTarget.Host(domain);
+        await PublicWebTarget.ResolveAsync(domain, ct);
+        try
+        {
+            using var response = await GetPublicAsync(new Uri($"https://{domain}{path}"), ct, domain);
+            var content = response.IsSuccessStatusCode ? await ReadLimitedAsync(response.Content, ct) : null;
+            return new PassiveFileResult((int)response.StatusCode, content, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning("网站技术文件读取失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
+            return new PassiveFileResult(null, null, "网站技术文件读取失败，请稍后重试。");
+        }
+    }
+
+    private async Task<HttpResponseMessage> GetPublicAsync(Uri url, CancellationToken ct, string? allowedHost = null)
+    {
+        for (var redirect = 0; redirect <= 3; redirect++)
+        {
+            var host = PublicWebTarget.Host(url.ToString());
+            if (allowedHost is not null && !string.Equals(host, allowedHost, StringComparison.OrdinalIgnoreCase))
+                throw new HttpRequestException("技术文件发生跨域重定向，已停止检测。");
+            await PublicWebTarget.ResolveAsync(host, ct);
+            var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            if ((int)response.StatusCode is < 300 or >= 400) return response;
+            var location = response.Headers.Location;
+            if (location is null)
+            {
+                response.Dispose();
+                throw new HttpRequestException("网站重定向缺少目标地址。");
+            }
+            var next = location.IsAbsoluteUri ? location : new Uri(url, location);
+            response.Dispose();
+            url = next;
+        }
+        throw new HttpRequestException("网站重定向次数过多。");
+    }
+
+    private static async Task<string> ReadLimitedAsync(HttpContent content, CancellationToken ct)
+    {
+        const int maxBytes = 1024 * 1024;
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > maxBytes)
+                throw new HttpRequestException("网站响应超过 1 MB 限制。");
+            buffer.Write(chunk, 0, read);
+        }
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     /// <summary>
@@ -176,6 +245,8 @@ public class WebsiteCheckService
     }
 }
 
+public sealed record PassiveFileResult(int? StatusCode, string? Content, string? Error);
+
 /// <summary>网站检测结果</summary>
 public class WebsiteCheckResult
 {
@@ -196,6 +267,7 @@ public class WebsiteCheckResult
     public int ContentLength { get; set; }
     public List<string> Issues { get; set; } = new();
     public string? Error { get; set; }
+    public bool TransientFailure { get; set; }
 
     /// <summary>是否检测到百度推广/统计代码（高价值客户标识）</summary>
     public bool HasBaiduAds { get; set; }

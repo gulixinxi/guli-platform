@@ -96,7 +96,7 @@
               :key="u.id"
               :label="`${u.name} (${u.code})`"
               :value="u.id"
-              :disabled="String(u.status) !== '1' && u.status !== 'active'"
+              :disabled="!isActiveUom(u.status)"
             />
           </el-select>
         </template>
@@ -294,6 +294,10 @@ const emit = defineEmits<{
   'uom-change': [row: LineGridRow, uomId: string];
 }>();
 
+function isActiveUom(status: unknown): boolean {
+  return String(status) === '1' || String(status).toLowerCase() === 'active';
+}
+
 // Local editable copy. v-model:lines drives the deep update path.
 const localLines = reactive<LineGridRow[]>([]);
 const selection = ref<LineGridRow[]>([]);
@@ -438,9 +442,7 @@ async function onPickerRowClick(item: Item) {
     // auto-fills the unit for the picked item. String() coerces the
     // int into its decimal form for the equality check; the typed
     // Uom's `status` is the string form so 'active' is also valid.
-    const active = uoms.items.filter(
-      (u) => String(u.status) === '1' || u.status === 'active',
-    );
+    const active = uoms.items.filter((u) => isActiveUom(u.status));
     row.uomOptions = active;
     row.uomById = Object.fromEntries(active.map((u) => [u.id, u]));
     const baseUomId = item.baseUomId;
@@ -500,9 +502,7 @@ async function fetchActiveUomsForBatch(): Promise<Uom[]> {
       // B3.6-G — see onPickerRowClick: accept both int and string
       // status encodings; the predicate change is additive (no
       // contract change).
-      return uoms.items.filter(
-        (u) => String(u.status) === '1' || u.status === 'active',
-      );
+      return uoms.items.filter((u) => isActiveUom(u.status));
     } finally {
       batchUomInflight = null;
     }

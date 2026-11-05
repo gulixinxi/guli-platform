@@ -12,7 +12,7 @@
       <div class="brand">
         <div class="brand-logo">谷</div>
         <div class="brand-text">
-          <div class="brand-title">GuliERP</div>
+          <div class="brand-title">Guli Platform</div>
         </div>
       </div>
       <div class="gs-topbar-center">
@@ -155,17 +155,19 @@
 
     <div class="gs-body">
       <!-- ===== Module Rail (60px, always visible except fullscreen) ===== -->
-      <nav v-show="!tabs.fullscreen" class="gs-rail" aria-label="Module navigation">
+      <nav v-show="!tabs.fullscreen" class="gs-rail" aria-label="业务系统切换">
         <div
           v-for="m in modules"
           :key="m.key"
           class="gs-rail-item"
-          :class="{ 'is-active': activeModule === m.key }"
+          :class="{ 'is-active': activeModule === m.key, 'is-disabled': m.disabled }"
+          :title="m.disabled ? m.placeholder : m.label"
+          :aria-disabled="m.disabled ? 'true' : undefined"
           @click="onModuleClick(m)"
         >
           <el-icon class="gs-rail-icon"><component :is="resolveIcon(m.icon)" /></el-icon>
           <span>{{ m.shortLabel }}</span>
-          <span class="gs-rail-tooltip">{{ m.label }}</span>
+          <span class="gs-rail-tooltip">{{ m.disabled ? m.placeholder : m.label }}</span>
         </div>
       </nav>
 
@@ -406,11 +408,11 @@ async function onLogout(): Promise<void> {
 const iconMap = {
   HomeFilled, Sell, ShoppingCart, Box, Coin, Setting, Tools,
   Document, Tickets, Bell, UserFilled, Van, Money, DataLine,
-  TrendCharts, Goods, OfficeBuilding, Avatar, Files, ScaleToOriginal,
+  TrendCharts, Goods, OfficeBuilding, Avatar, Files, ScaleToOriginal, Search,
 };
 
 const modules = computed(() => shellNavigation.filter(canAccessModule));
-const activeModule = ref<ShellNavigationModule['key']>('sales');
+const activeModule = ref<ShellNavigationModule['key']>('home');
 const activeModuleNavigation = computed(() =>
   modules.value.find(m => m.key === activeModule.value) ?? modules.value[0] ?? shellNavigation[0]);
 const currentModuleLabel = computed(() => activeModuleNavigation.value?.label || '');
@@ -444,8 +446,9 @@ function resolveIcon(name: string) {
 }
 
 function canAccessModule(module: ShellNavigationModule): boolean {
-  return !module.disabled && (!module.permissionKey || auth.user?.permissionCodes?.includes(module.permissionKey) === true)
-    && (!['crm', 'basic', 'mdm', 'sales', 'purchase', 'system'].includes(module.key) || module.groups.some(group => group.items.some(item => !!item.route && canAccessItem(item))));
+  if (module.disabled) return module.key === 'lead' || module.key === 'geo';
+  return (!module.permissionKey || auth.user?.permissionCodes?.includes(module.permissionKey) === true)
+    && (module.key === 'home' || module.groups.some(group => group.items.some(item => !!item.route && canAccessItem(item))));
 }
 
 function canAccessItem(item: ShellNavigationItem): boolean {
@@ -478,6 +481,7 @@ watch(
 );
 
 function onModuleClick(m: ShellNavigationModule) {
+  if (m.disabled) return;
   const moduleChanged = m.key !== activeModule.value;
   if (moduleChanged && secondaryCollapsed.value) {
     secondaryCollapsed.value = false;

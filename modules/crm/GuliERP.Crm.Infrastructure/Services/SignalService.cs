@@ -34,6 +34,16 @@ public class SignalService : ISignalService
 
     public async Task<SignalDto> CreateAsync(CreateSignalCommand cmd, CancellationToken ct = default)
     {
+        string? sourceUrl = null;
+        if (!string.IsNullOrWhiteSpace(cmd.SourceUrl))
+        {
+            if (!Uri.TryCreate(cmd.SourceUrl.Trim(), UriKind.Absolute, out var parsed)
+                || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
+                || string.IsNullOrWhiteSpace(parsed.IdnHost) || !string.IsNullOrEmpty(parsed.UserInfo))
+                throw new ArgumentException("来源链接必须是无账号信息的 HTTP 或 HTTPS 网页地址。");
+            sourceUrl = parsed.AbsoluteUri;
+        }
+
         var signal = new Signal
         {
             LeadId = cmd.LeadId,
@@ -43,7 +53,7 @@ public class SignalService : ISignalService
             Title = cmd.Title,
             Detail = cmd.Detail,
             Source = cmd.Source,
-            SourceUrl = cmd.SourceUrl,
+            SourceUrl = sourceUrl,
             EventAt = cmd.EventAt,
             CollectedAt = DateTimeOffset.UtcNow,
             Confidence = cmd.Confidence,
@@ -64,6 +74,8 @@ public class SignalService : ISignalService
     {
         var signal = await _db.Signals.FirstOrDefaultAsync(s => s.Id == id, ct);
         if (signal == null) throw new KeyNotFoundException($"信号 {id} 不存在");
+        if (signal.Source.StartsWith("website-", StringComparison.Ordinal))
+            throw new InvalidOperationException("网站提醒请使用专用的已核对/忽略处理入口。");
 
         signal.Status = cmd.Status;
         signal.HandledAt = DateTimeOffset.UtcNow;
@@ -77,6 +89,8 @@ public class SignalService : ISignalService
     {
         var signal = await _db.Signals.FirstOrDefaultAsync(s => s.Id == id, ct);
         if (signal == null) throw new KeyNotFoundException($"信号 {id} 不存在");
+        if (signal.Source.StartsWith("website-", StringComparison.Ordinal))
+            throw new InvalidOperationException("网站提醒不适用证件验证状态。");
 
         signal.VerificationStatus = (VerificationStatus)cmd.VerificationStatus;
         signal.VerifiedAt = DateTimeOffset.UtcNow;
@@ -91,7 +105,7 @@ public class SignalService : ISignalService
         return ToDto(signal);
     }
 
-    private static SignalDto ToDto(Signal s) => new(
+    internal static SignalDto ToDto(Signal s) => new(
         s.Id, s.LeadId, s.CompanyRefId, s.CompanyName, s.Type, s.Title,
         s.Detail, s.Source, s.SourceUrl, s.EventAt, s.CollectedAt,
         s.Confidence, s.Status, s.HandledBy, s.HandledAt, s.HandleNote,

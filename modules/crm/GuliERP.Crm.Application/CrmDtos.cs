@@ -40,7 +40,8 @@ public record LeadDto(
     string? Remarks,
     List<string> Tags,
     DateTimeOffset CreatedAt,
-    long? CreatedBy);
+    long? CreatedBy,
+    long? SourceIdentityCandidateId = null);
 
 public record LeadListQuery(
     string? Keyword,
@@ -75,7 +76,38 @@ public record CreateLeadRequest(
     string? ExternalKey,
     string? ExternalSource,
     string? Remarks,
-    List<string>? Tags = null);
+    List<string>? Tags = null,
+    long? SourceReverseLookupRecordId = null);
+
+/// <summary>
+/// 一条结构化证据（PRD 第 4.1 节的 <c>evidence[]</c> 元素）。
+/// </summary>
+/// <param name="EvidenceType">见 <c>LeadEvidenceTypes</c>。</param>
+/// <param name="Url">来源链接；口述类证据可空。</param>
+/// <param name="CollectedAt">采集时间；不知道就留空，不要拿「填写时间」冒充。</param>
+/// <param name="VerificationStatus">见 <c>LeadEvidenceVerifications</c>。</param>
+/// <param name="Note">证据原文或说明。</param>
+public record EvidenceItemInput(
+    string EvidenceType,
+    string? Url,
+    DateTimeOffset? CollectedAt,
+    string VerificationStatus,
+    string? Note);
+
+/// <summary>
+/// 线索需求评估的保存输入。
+/// </summary>
+/// <param name="Evidence">
+/// 【已废弃】旧的自由文本证据字段。仅在读取历史数据时仍有值。
+/// 新写入请使用 <paramref name="EvidenceItems"/>；服务端会忽略本字段。
+/// </param>
+public record LeadDemandAssessmentInput(
+    string State,
+    string? Confidence,
+    string? Evidence,
+    string? Reason,
+    string? NextAction,
+    EvidenceItemInput[]? EvidenceItems = null);
 
 /// <summary>批量导入结果统计</summary>
 public record BatchImportResult(int Total, int Imported, int Skipped, int Failed);
@@ -285,7 +317,9 @@ public record CreateDealRequest(
     string? ExpectedCloseMonth,
     int? WinRate,
     long? OwnerId,
-    string? Remarks);
+    string? Remarks,
+    long? SourceLeadDemandAssessmentId = null,
+    int? SourceLeadDemandAssessmentVersion = null);
 
 public record UpdateDealRequest(
     string Name,
@@ -341,6 +375,23 @@ public record UpdateActivityRequest(
     long? OwnerId,
     string? Attachments,
     string? Remarks);
+
+// ===== 负责人分配（专门操作） =====
+
+/// <summary>
+/// 专门分配／清空负责人的请求。
+///
+/// <para>
+/// <c>ownerId</c> 与 <c>clear</c> 互斥：
+/// <list type="bullet">
+///   <item><c>ownerId</c> 有值 ⇒ 分配给当前公司的有效成员（写入前做成员资格校验）。</item>
+///   <item><c>clear = true</c> ⇒ 清空负责人，必须显式声明。</item>
+/// </list>
+/// 两者都不给 ⇒ 400。理由：<c>ownerId</c> 省略与显式 null 在现有 JSON 绑定下不可区分，
+/// 若把「没写」当成清空，就等于把 R41 记录的静默清空缺陷换个入口重演一遍。
+/// </para>
+/// </summary>
+public sealed record AssignOwnerRequest(long? OwnerId, bool Clear = false);
 
 // ===== 导入导出留痕（ImportExportLog）DTO =====
 public record ImportExportLogDto(

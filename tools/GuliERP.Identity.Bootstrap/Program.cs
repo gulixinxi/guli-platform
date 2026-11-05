@@ -853,17 +853,51 @@ public static class Program
         if (args.Length < 8)
         {
             await Console.Error.WriteLineAsync(
-                "Usage: gulierp-identity-bootstrap --formal-enterprise-bootstrap <connectionString|--connection-string-from-env> <tenantCode> <tenantName> <companyCode> <companyName> <adminUserName> <adminDisplayName> [adminEmail] [adminPhone]  (password from STDIN)");
+                "Usage: gulierp-identity-bootstrap --formal-enterprise-bootstrap --connection-string-from-env <tenantCode> <tenantName> <companyCode> <companyName> <adminUserName> <adminDisplayName> [adminEmail] [adminPhone]  (database connection from process environment; password from STDIN)");
             return ExitConnectionMissing;
         }
 
-        var connectionString = ResolveFormalBootstrapConnectionString(args[1]);
+        // A connection string passed as a CLI argument can be read from the
+        // operating system process list and command history during release.
+        if (!string.Equals(args[1], ConnectionStringFromEnvironment, StringComparison.Ordinal))
+        {
+            await Console.Error.WriteLineAsync(
+                "SAFETY(--formal-enterprise-bootstrap): use --connection-string-from-env; direct connection arguments are refused.");
+            return ExitSafetyGuard;
+        }
+
+        var connectionString = Environment.GetEnvironmentVariable(
+            "ConnectionStrings__GuliERP", EnvironmentVariableTarget.Process);
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             await Console.Error.WriteLineAsync(
                 "ERROR(--formal-enterprise-bootstrap): connection string is missing. " +
-                "Pass a connection string or --connection-string-from-env with ConnectionStrings__GuliERP set.");
+                "Set process-level ConnectionStrings__GuliERP before using --connection-string-from-env.");
             return ExitConnectionMissing;
+        }
+        var expectedDatabase = Environment.GetEnvironmentVariable(
+            "GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE", EnvironmentVariableTarget.Process);
+        if (string.IsNullOrWhiteSpace(expectedDatabase))
+        {
+            await Console.Error.WriteLineAsync(
+                "SAFETY(--formal-enterprise-bootstrap): set process-level GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE.");
+            return ExitSafetyGuard;
+        }
+        try
+        {
+            var target = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+            if (!string.Equals(target.Database, expectedDatabase, StringComparison.Ordinal))
+            {
+                await Console.Error.WriteLineAsync(
+                    "SAFETY(--formal-enterprise-bootstrap): connection database differs from the declared target.");
+                return ExitSafetyGuard;
+            }
+        }
+        catch (ArgumentException)
+        {
+            await Console.Error.WriteLineAsync(
+                "SAFETY(--formal-enterprise-bootstrap): connection string is invalid.");
+            return ExitSafetyGuard;
         }
         var tenantCode = args[2];
         var tenantName = args[3];
@@ -888,8 +922,10 @@ public static class Program
             var services = new ServiceCollection();
             services.AddLogging(b =>
             {
-                b.SetMinimumLevel(LogLevel.Information);
-                b.AddProvider(new StderrLoggerProvider());
+                // Formal bootstrap output can be retained in release logs.
+                // Suppress provider diagnostics here: a database exception or
+                // validation message may contain a connection detail or input.
+                b.SetMinimumLevel(LogLevel.None);
             });
             services.AddDbContext<IdentityDbContext>(options =>
             {
@@ -951,16 +987,16 @@ public static class Program
             await Console.Out.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(output));
             return ExitOk;
         }
-        catch (EnterpriseBootstrapConflictException ex)
+        catch (EnterpriseBootstrapConflictException)
         {
             await Console.Error.WriteLineAsync(
-                $"CONFLICT(--formal-enterprise-bootstrap): {ex.Message}");
+                "CONFLICT(--formal-enterprise-bootstrap): formal enterprise identifiers are already in use; review the target database before retrying.");
             return ExitTenantCompanyFailure;
         }
-        catch (EnterpriseBootstrapSchemaException ex)
+        catch (EnterpriseBootstrapSchemaException)
         {
             await Console.Error.WriteLineAsync(
-                $"SCHEMA ERROR(--formal-enterprise-bootstrap): {ex.Message}");
+                "SCHEMA ERROR(--formal-enterprise-bootstrap): required identity schema is unavailable; verify migrations and target database.");
             return ExitDatabaseUnavailable;
         }
         catch (Exception ex) when (
@@ -970,13 +1006,13 @@ public static class Program
                 or TimeoutException)
         {
             await Console.Error.WriteLineAsync(
-                $"DB ERROR(--formal-enterprise-bootstrap): {ex.GetType().Name}: {ex.Message}");
+                "DB ERROR(--formal-enterprise-bootstrap): database operation failed; verify target, permissions and connectivity.");
             return ExitDatabaseUnavailable;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             await Console.Error.WriteLineAsync(
-                $"EXCEPTION(--formal-enterprise-bootstrap): {ex.GetType().Name}: {ex.Message}");
+                "EXCEPTION(--formal-enterprise-bootstrap): initialization failed; inspect the target and retry only after review.");
             return ExitOtherException;
         }
         finally

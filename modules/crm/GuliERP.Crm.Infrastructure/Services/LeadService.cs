@@ -3,14 +3,20 @@ using GuliERP.Crm.Domain.Entities;
 using GuliERP.Crm.Domain.Enums;
 using GuliERP.Crm.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace GuliERP.Crm.Infrastructure.Services;
 
 public class LeadService : ILeadService
 {
     private readonly CrmDbContext _db;
+    private readonly ICrmNumberGenerator _numbers;
 
-    public LeadService(CrmDbContext db) => _db = db;
+    public LeadService(CrmDbContext db, ICrmNumberGenerator numbers)
+    {
+        _db = db;
+        _numbers = numbers;
+    }
 
     public async Task<PagedResult<LeadDto>> ListAsync(LeadListQuery query, CancellationToken ct)
     {
@@ -50,20 +56,25 @@ public class LeadService : ILeadService
 
     public async Task<LeadDto> CreateAsync(CreateLeadRequest request, long? userId, CancellationToken ct)
     {
+        if (request.SourceReverseLookupRecordId is long sourceRecordId
+            && !await _db.ReverseLookupRecords.AnyAsync(r => r.Id == sourceRecordId, ct))
+            throw new InvalidOperationException("当前公司找不到该单位反查记录。");
         // 单条创建去重保护（与批量导入相同规则）
         var normalizedCreditCode = NormalizeCreditCode(request.CreditCode);
         var companyName = request.CompanyName.Trim();
-        var domain = request.WebsiteDomain;
-        var mobile = request.Mobile;
-
         var duplicate = await _db.Leads.FirstOrDefaultAsync(x =>
-            (!string.IsNullOrEmpty(normalizedCreditCode) && x.CreditCode == normalizedCreditCode) ||
-            (string.IsNullOrEmpty(normalizedCreditCode) && x.CompanyName == companyName) ||
-            (string.IsNullOrEmpty(normalizedCreditCode) && !string.IsNullOrEmpty(domain) && x.WebsiteDomain == domain) ||
-            (string.IsNullOrEmpty(normalizedCreditCode) && !string.IsNullOrEmpty(mobile) && x.Mobile == mobile), ct);
+            (!string.IsNullOrEmpty(normalizedCreditCode) && x.CreditCode != null
+                && x.CreditCode.Trim().ToUpper() == normalizedCreditCode) ||
+            (string.IsNullOrEmpty(normalizedCreditCode) && x.CompanyName.Trim().ToLower() == companyName.ToLower()), ct);
 
         if (duplicate != null)
         {
+            if (request.SourceReverseLookupRecordId is long existingRecordId
+                && duplicate.SourceReverseLookupRecordId is null)
+            {
+                duplicate.SourceReverseLookupRecordId = existingRecordId;
+                await _db.SaveChangesAsync(ct);
+            }
             // 已存在重复记录，返回已有记录，不创建新的
             return ToDto(duplicate);
         }
@@ -91,6 +102,7 @@ public class LeadService : ILeadService
             CollectedAt = DateTimeOffset.UtcNow,
             ExternalKey = request.ExternalKey,
             ExternalSource = request.ExternalSource,
+            SourceReverseLookupRecordId = request.SourceReverseLookupRecordId,
             Status = LeadStatus.Pending,
             Remarks = request.Remarks,
             Tags = request.Tags ?? new List<string>(),
@@ -106,7 +118,23 @@ public class LeadService : ILeadService
         lead.IsRatingSuggested = true;
 
         _db.Leads.Add(lead);
-        await _db.SaveChangesAsync(ct);
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsLeadIdentityConflict(ex))
+        {
+            _db.Entry(lead).State = EntityState.Detached;
+            var existing = await _db.Leads.FirstOrDefaultAsync(x =>
+                (normalizedCreditCode != null && x.CreditCode != null
+                    && x.CreditCode.Trim().ToUpper() == normalizedCreditCode)
+                || (normalizedCreditCode == null
+                    && x.CompanyName.Trim().ToLower() == companyName.ToLower()), ct);
+            if (existing is null || (normalizedCreditCode != null && existing.CreditCode != null
+                && NormalizeCreditCode(existing.CreditCode) != normalizedCreditCode))
+                throw new InvalidOperationException("企业身份冲突，请人工核对名称与信用代码。", ex);
+            return ToDto(existing);
+        }
         return ToDto(lead);
     }
 
@@ -230,7 +258,7 @@ public class LeadService : ILeadService
         var company = new Company
         {
             Id = SnowflakeId(),
-            CompanyNo = await GenerateCompanyNo(ct),
+            CompanyNo = await _numbers.NextCompanyNoAsync(ct),
             FullName = request.FullName.Trim(),
             CreditCode = request.CreditCode,
             ShortName = request.ShortName,
@@ -252,7 +280,7 @@ public class LeadService : ILeadService
             IsRatingSuggested = lead.IsRatingSuggested,
             ExternalKey = lead.ExternalKey,
             ExternalSource = lead.ExternalSource,
-            Remarks = request.Remarks,
+            Remarks = string.IsNullOrWhiteSpace(request.Remarks) ? lead.Remarks : request.Remarks,
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedBy = userId,
             ModifiedAt = DateTimeOffset.UtcNow,
@@ -346,17 +374,15 @@ public class LeadService : ILeadService
         foreach (var request in leads)
         {
             total++;
-            // 去重规则（国内企业）：
-            // 1. 统一社会信用代码（最权威，有就用这个）
-            // 2. 公司全称精确匹配
-            // 3. 官网域名（辅助）
-            // 4. 手机号（辅助）
+            // Only strong identity keys are merged automatically. Domain/mobile
+            // matches require manual review and must not silently merge firms.
             var normalizedCreditCode = NormalizeCreditCode(request.CreditCode);
+            var companyName = request.CompanyName.Trim();
             var exists = await _db.Leads.AnyAsync(x =>
-                (!string.IsNullOrEmpty(normalizedCreditCode) && x.CreditCode == normalizedCreditCode) ||
-                (string.IsNullOrEmpty(normalizedCreditCode) && x.CompanyName == request.CompanyName.Trim()) ||
-                (string.IsNullOrEmpty(normalizedCreditCode) && !string.IsNullOrEmpty(request.WebsiteDomain) && x.WebsiteDomain == request.WebsiteDomain) ||
-                (string.IsNullOrEmpty(normalizedCreditCode) && !string.IsNullOrEmpty(request.Mobile) && x.Mobile == request.Mobile), ct);
+                (normalizedCreditCode != null && x.CreditCode != null
+                    && x.CreditCode.Trim().ToUpper() == normalizedCreditCode)
+                || (normalizedCreditCode == null
+                    && x.CompanyName.Trim().ToLower() == companyName.ToLower()), ct);
 
             if (exists)
             {
@@ -369,7 +395,7 @@ public class LeadService : ILeadService
                 var lead = new Lead
                 {
                     Id = SnowflakeId(),
-                    CompanyName = request.CompanyName.Trim(),
+                    CompanyName = companyName,
                     CreditCode = normalizedCreditCode,
                     WebsiteDomain = request.WebsiteDomain,
                     ContactName = request.ContactName,
@@ -401,15 +427,31 @@ public class LeadService : ILeadService
                 lead.IsRatingSuggested = true;
 
                 _db.Leads.Add(lead);
+                await _db.SaveChangesAsync(ct);
                 successCount++;
+            }
+            catch (DbUpdateException ex) when (IsLeadIdentityConflict(ex))
+            {
+                foreach (var entry in _db.ChangeTracker.Entries<Lead>().Where(e => e.State == EntityState.Added))
+                    entry.State = EntityState.Detached;
+                if (normalizedCreditCode != null && ex.InnerException is PostgresException
+                    { ConstraintName: "UX_leads_scope_name_normalized" })
+                    failCount++; // Same name with a different/unknown code needs human review.
+                else
+                    skipCount++;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
+                foreach (var entry in _db.ChangeTracker.Entries<Lead>().Where(e => e.State == EntityState.Added))
+                    entry.State = EntityState.Detached;
                 failCount++;
             }
         }
 
-        await _db.SaveChangesAsync(ct);
         return new BatchImportResult(total, successCount, skipCount, failCount);
     }
 
@@ -463,7 +505,7 @@ public class LeadService : ILeadService
         x.Industry, x.Scale, x.SubjectType, x.Source, x.SourceUrl, x.CollectedAt, x.ExternalKey,
         x.ExternalSource, x.Status, x.AiScore, x.Rating, x.IsRatingSuggested,
         x.OwnerId, x.ClaimedAt, x.ConvertedToCompanyId, x.ConvertedAt, x.ConvertedBy,
-        x.Remarks, x.Tags.ToList(), x.CreatedAt, x.CreatedBy);
+        x.Remarks, x.Tags.ToList(), x.CreatedAt, x.CreatedBy, x.SourceIdentityCandidateId);
 
     /// <summary>
     /// 统一社会信用代码标准化：去空格、转大写
@@ -474,12 +516,12 @@ public class LeadService : ILeadService
         return code.Trim().ToUpperInvariant();
     }
 
-    private async Task<string> GenerateCompanyNo(CancellationToken ct)
-    {
-        var date = DateTime.Now.ToString("yyyyMMdd");
-        var count = await _db.Companies.CountAsync(x => x.CompanyNo.StartsWith($"CO{date}"), ct);
-        return $"CO{date}{(count + 1):D4}";
-    }
+    private static bool IsLeadIdentityConflict(DbUpdateException ex) =>
+        ex.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: "UX_leads_scope_credit_normalized" or "UX_leads_scope_name_normalized"
+        };
 
     private static long SnowflakeId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000 + Random.Shared.Next(1000);
 

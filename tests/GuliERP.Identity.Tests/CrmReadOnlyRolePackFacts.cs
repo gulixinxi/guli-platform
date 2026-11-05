@@ -6,6 +6,15 @@ namespace GuliERP.Identity.Tests;
 public sealed class CrmReadOnlyRolePackFacts
 {
     [Fact]
+    public void IdentityReview_IsSeparateFromOrdinaryCrmOperator()
+    {
+        Assert.DoesNotContain("crm.identity.review", EnterpriseBusinessRolePacks.CrmOperator.Permissions);
+        Assert.Equal("CRM_IDENTITY_REVIEWER", EnterpriseBusinessRolePacks.CrmIdentityReviewer.Code);
+        Assert.Equal(new[] { "crm.identity.review", "crm.lead.read" },
+            EnterpriseBusinessRolePacks.CrmIdentityReviewer.Permissions.OrderBy(x => x, StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void CrmOperator_Grants_Core_Workflow_Without_Admin_Import_Or_Export()
     {
         var pack = EnterpriseBusinessRolePacks.CrmOperator;

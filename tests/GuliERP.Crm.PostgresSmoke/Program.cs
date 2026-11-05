@@ -32,8 +32,9 @@ await using (var transaction = await db.Database.BeginTransactionAsync())
 {
     try
     {
-        var leads = new LeadService(db);
-        var deals = new DealService(db);
+        var numbers = new CrmNumberGenerator(db);
+        var leads = new LeadService(db, numbers);
+        var deals = new DealService(db, numbers);
         var name = $"CRM_SMOKE_{Guid.NewGuid():N}";
         var lead = await leads.CreateAsync(new CreateLeadRequest(
             name, null, null, "Smoke Contact", null, null, null, null, null,

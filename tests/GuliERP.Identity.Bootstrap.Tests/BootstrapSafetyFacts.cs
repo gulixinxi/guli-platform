@@ -58,6 +58,31 @@ public class BootstrapSafetyFacts
     }
 
     [Fact]
+    public async Task FormalBootstrap_RefusesConnectionStringInCommandArguments()
+    {
+        var savedStderr = Console.Error;
+        using var stderr = new StringWriter();
+        try
+        {
+            Console.SetError(stderr);
+            var exit = await Program.Main(new[]
+            {
+                "--formal-enterprise-bootstrap",
+                "Host=127.0.0.1;Database=none;Username=test;Password=SECRET_SENTINEL",
+                "tenant", "Tenant", "company", "Company", "admin", "Admin",
+            });
+
+            Assert.Equal(Program.ExitSafetyGuard, exit);
+            Assert.Contains("direct connection arguments are refused", stderr.ToString());
+            Assert.DoesNotContain("SECRET_SENTINEL", stderr.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetError(savedStderr);
+        }
+    }
+
+    [Fact]
     public async Task FormalBootstrap_ConnectionStringFromEnvironmentMissing_ReturnsConnectionMissing()
     {
         var savedPrimary = Environment.GetEnvironmentVariable("ConnectionStrings__GuliERP");
@@ -96,14 +121,19 @@ public class BootstrapSafetyFacts
     {
         var savedPrimary = Environment.GetEnvironmentVariable("ConnectionStrings__GuliERP");
         var savedFallback = Environment.GetEnvironmentVariable("GULIERP_ConnectionStrings__GuliERP");
+        var savedExpectedDatabase = Environment.GetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE");
         var savedStdin = Console.In;
+        var savedStderr = Console.Error;
+        using var stderr = new StringWriter();
         try
         {
             Environment.SetEnvironmentVariable(
                 "ConnectionStrings__GuliERP",
                 "Host=127.0.0.1;Port=1;Database=none;Username=test;Password=test;Timeout=1;Command Timeout=1");
             Environment.SetEnvironmentVariable("GULIERP_ConnectionStrings__GuliERP", null);
+            Environment.SetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE", "none");
             Console.SetIn(new StringReader("ValidPassword1!"));
+            Console.SetError(stderr);
 
             var exit = await Program.Main(new[]
             {
@@ -119,12 +149,48 @@ public class BootstrapSafetyFacts
 
             Assert.NotEqual(Program.ExitConnectionMissing, exit);
             Assert.NotEqual(Program.ExitSafetyGuard, exit);
+            Assert.Matches("^(SCHEMA ERROR|DB ERROR)\\(--formal-enterprise-bootstrap\\):", stderr.ToString());
+            Assert.DoesNotContain("Password=test", stderr.ToString(), StringComparison.Ordinal);
         }
         finally
         {
             Environment.SetEnvironmentVariable("ConnectionStrings__GuliERP", savedPrimary);
             Environment.SetEnvironmentVariable("GULIERP_ConnectionStrings__GuliERP", savedFallback);
+            Environment.SetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE", savedExpectedDatabase);
             Console.SetIn(savedStdin);
+            Console.SetError(savedStderr);
+        }
+    }
+
+    [Fact]
+    public async Task FormalBootstrap_RefusesMismatchedDeclaredDatabaseBeforeConnecting()
+    {
+        var savedPrimary = Environment.GetEnvironmentVariable("ConnectionStrings__GuliERP");
+        var savedExpectedDatabase = Environment.GetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE");
+        var savedStderr = Console.Error;
+        using var stderr = new StringWriter();
+        try
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__GuliERP",
+                "Host=127.0.0.1;Port=1;Database=wrong_db;Username=test;Password=SECRET_SENTINEL");
+            Environment.SetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE", "approved_db");
+            Console.SetError(stderr);
+
+            var exit = await Program.Main(new[]
+            {
+                "--formal-enterprise-bootstrap", Program.ConnectionStringFromEnvironment,
+                "tenant", "Tenant", "company", "Company", "admin", "Admin",
+            });
+
+            Assert.Equal(Program.ExitSafetyGuard, exit);
+            Assert.Contains("connection database differs from the declared target", stderr.ToString());
+            Assert.DoesNotContain("SECRET_SENTINEL", stderr.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ConnectionStrings__GuliERP", savedPrimary);
+            Environment.SetEnvironmentVariable("GULIERP_FORMAL_BOOTSTRAP_EXPECTED_DATABASE", savedExpectedDatabase);
+            Console.SetError(savedStderr);
         }
     }
 

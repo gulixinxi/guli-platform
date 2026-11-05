@@ -48,6 +48,8 @@ tools/.quarantine/
 modules/mdm/GuliERP.Mdm.Infrastructure/tools/.quarantine/
 
 # Discovery transient Python/cache/log output.
+**/__pycache__/
+*.pyc
 tools/discovery/**/__pycache__/
 tools/discovery/**/*.pyc
 tools/discovery/**/_*.log

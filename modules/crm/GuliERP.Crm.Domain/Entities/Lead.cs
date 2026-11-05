@@ -77,6 +77,11 @@ public sealed class Lead : ICompanyScoped
     /// <summary>外部系统来源</summary>
     public string? ExternalSource { get; set; }
 
+    /// <summary>原始单位反查记录，非空时由当前公司范围内的记录核验后关联。</summary>
+    public long? SourceReverseLookupRecordId { get; set; }
+    /// <summary>Reviewed identity used by the dedicated promotion workflow.</summary>
+    public long? SourceIdentityCandidateId { get; set; }
+
     // ===== 处理状态 =====
     /// <summary>线索状态</summary>
     public LeadStatus Status { get; set; } = LeadStatus.Pending;

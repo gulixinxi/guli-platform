@@ -1,6 +1,9 @@
 <template>
   <div class="crm-company-detail" v-loading="loading">
     <el-page-header @back="goBack" :content="company?.fullName || '客户详情'" />
+    <el-alert v-if="companyError" type="error" :closable="false" class="detail-error" :title="companyError">
+      <el-button link type="primary" @click="loadData">重新加载</el-button>
+    </el-alert>
 
     <el-card v-if="company" shadow="never" class="info-card">
       <el-descriptions :column="3" border>
@@ -12,34 +15,44 @@
         <el-descriptions-item label="客户状态">
           <el-tag :type="statusTagType(company.status)">{{ statusLabel(company.status) }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="负责人">
+          <span>{{ company.ownerId || '未分配' }}</span>
+          <el-button v-if="company.ownerId && can('crm.company.assign')" link type="danger" :loading="clearingOwner" @click="handleClearOwner">清空负责人</el-button>
+        </el-descriptions-item>
         <el-descriptions-item label="意向评级">
           <el-tag v-if="company.rating !== undefined" :type="ratingTagType(company.rating)">{{ ratingLabel(company.rating) }}</el-tag>
           <span v-else>-</span>
         </el-descriptions-item>
         <el-descriptions-item label="是否有官网">{{ company.hasWebsite ? '是' : '否' }}</el-descriptions-item>
-        <el-descriptions-item label="官网域名">{{ company.websiteDomain || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="官网域名">
+          <a v-if="safeWebsiteHref(company.websiteDomain)" :href="safeWebsiteHref(company.websiteDomain) || undefined" target="_blank" rel="noopener noreferrer">{{ company.websiteDomain }}</a>
+          <span v-else>{{ company.websiteDomain || '-' }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="详细地址" :span="3">{{ company.address || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="3">{{ company.remarks || '-' }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
-    <el-tabs v-model="activeTab" class="detail-tabs">
+    <el-tabs v-if="company" v-model="activeTab" class="detail-tabs">
       <!-- 联系人 -->
-      <el-tab-pane label="联系人" name="contacts">
+      <el-tab-pane v-if="can('crm.contact.read')" label="联系人" name="contacts">
         <el-card shadow="never">
-          <el-alert v-if="contactsError" type="warning" :closable="false" title="联系人未加载；请检查联系人读取权限。" />
+          <el-alert v-if="contactsError" type="error" :closable="false" title="联系人加载失败。"><el-button link type="primary" @click="loadData">重新加载</el-button></el-alert>
           <template #header>
             <div class="tab-header">
               <span>联系人列表</span>
               <el-button v-if="can('crm.contact.manage')" type="primary" size="small" @click="showContactForm = true">添加联系人</el-button>
             </div>
           </template>
-          <el-table :data="contacts" stripe>
+          <el-table v-if="!contactsError" :data="contacts" stripe>
             <el-table-column prop="name" label="姓名" width="100" />
             <el-table-column prop="position" label="职务" width="120" />
-            <el-table-column prop="mobile" label="手机" width="130" />
-            <el-table-column prop="wechat" label="微信" width="120" />
-            <el-table-column prop="email" label="邮箱" width="180" />
+            <el-table-column label="手机" min-width="190"><template #default="{ row }"><ContactActionValue :value="row.mobile" kind="phone" label="手机" /></template></el-table-column>
+            <el-table-column label="电话" min-width="190"><template #default="{ row }"><ContactActionValue :value="row.phone" kind="phone" label="电话" /></template></el-table-column>
+            <el-table-column label="微信" min-width="175"><template #default="{ row }"><ContactActionValue :value="row.wechat" kind="wechat" label="微信" /></template></el-table-column>
+            <el-table-column label="邮箱" min-width="240">
+              <template #default="{ row }"><ContactActionValue :value="row.email" kind="email" label="邮箱" /></template>
+            </el-table-column>
             <el-table-column label="关键人" width="80">
               <template #default="{ row }">
                 <el-tag v-if="row.isKeyPerson" type="success">是</el-tag>
@@ -56,16 +69,16 @@
       </el-tab-pane>
 
       <!-- 商机 -->
-      <el-tab-pane label="商机" name="deals">
+      <el-tab-pane v-if="can('crm.deal.read')" label="商机" name="deals">
         <el-card shadow="never">
-          <el-alert v-if="dealsError" type="warning" :closable="false" title="商机未加载；请检查商机读取权限。" />
+          <el-alert v-if="dealsError" type="error" :closable="false" title="商机加载失败。"><el-button link type="primary" @click="loadData">重新加载</el-button></el-alert>
           <template #header>
             <div class="tab-header">
               <span>商机列表</span>
-              <el-button v-if="can('crm.deal.manage')" type="primary" size="small" @click="showDealForm = true">新建商机</el-button>
+              <el-button v-if="can('crm.deal.manage')" type="primary" size="small" @click="router.push({ path: '/crm/leads', query: { keyword: company?.fullName || '' } })">从已确认需求创建商机</el-button>
             </div>
           </template>
-          <el-table :data="deals" stripe>
+          <el-table v-if="!dealsError" :data="deals" stripe>
             <el-table-column prop="dealNo" label="商机编号" width="140" />
             <el-table-column prop="name" label="商机名称" min-width="180" />
             <el-table-column label="业务品类" width="100">
@@ -87,16 +100,16 @@
       </el-tab-pane>
 
       <!-- 跟进记录 -->
-      <el-tab-pane label="跟进记录" name="activities">
+      <el-tab-pane v-if="can('crm.activity.read')" label="跟进记录" name="activities">
         <el-card shadow="never">
-          <el-alert v-if="activitiesError" type="warning" :closable="false" title="跟进记录未加载；请检查跟进读取权限。" />
+          <el-alert v-if="activitiesError" type="error" :closable="false" title="跟进记录加载失败。"><el-button link type="primary" @click="loadData">重新加载</el-button></el-alert>
           <template #header>
             <div class="tab-header">
               <span>跟进记录</span>
               <el-button v-if="can('crm.activity.manage')" type="primary" size="small" @click="showActivityForm = true">新增跟进</el-button>
             </div>
           </template>
-          <el-timeline>
+          <el-timeline v-if="!activitiesError">
             <el-timeline-item
               v-for="act in activities"
               :key="act.id"
@@ -115,13 +128,16 @@
               </el-card>
             </el-timeline-item>
           </el-timeline>
-          <el-empty v-if="activities.length === 0" description="暂无跟进记录" />
+          <el-empty v-if="!activitiesError && activities.length === 0" description="暂无跟进记录" />
         </el-card>
       </el-tab-pane>
 
       <!-- L2 销售情报卡 -->
-      <el-tab-pane label="销售情报" name="intelligence">
+      <el-tab-pane v-if="can('crm.lead.read')" label="销售情报" name="intelligence">
         <div v-loading="intelLoading" class="intel-card">
+          <el-alert v-if="intelError" type="error" :closable="false" title="销售情报加载失败，请重试。">
+            <el-button link type="primary" @click="loadIntelligence">重新加载</el-button>
+          </el-alert>
           <!-- 推荐切入点 -->
           <el-card shadow="never" style="margin-bottom:12px">
             <template #header><b>推荐切入点</b></template>
@@ -161,7 +177,7 @@
             <template #header><b>企业情报信号（{{ signals.length }}条）</b></template>
             <el-table :data="signals" size="small">
               <el-table-column label="类型" width="90">
-                <template #default="{ row }">{{ ['网站异常','官网缺失','GEO变化','ICP变动','许可证到期','政府处罚','招标采购','政策补贴','招聘扩张','外贸信息','其他'][row.type] || row.type }}</template>
+                <template #default="{ row }">{{ signalTypeLabel(row.type) }}</template>
               </el-table-column>
               <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip />
               <el-table-column prop="source" label="来源" width="80" />
@@ -169,16 +185,16 @@
                 <template #default="{ row }">{{ row.confidence }}%</template>
               </el-table-column>
               <el-table-column label="状态" width="80">
-                <template #default="{ row }"><el-tag size="small" :type="['warning','success','info','primary'][row.status]">{{ ['待处理','已确认','已忽略','已转商机'][row.status] }}</el-tag></template>
+                <template #default="{ row }"><el-tag size="small" :type="signalStatusTag(row.status)">{{ signalStatusLabel(row.status) }}</el-tag></template>
               </el-table-column>
             </el-table>
           </el-card>
 
-          <el-empty v-if="!intelLoading && signals.length === 0 && suggestions.length === 0" description="暂无情报数据，运行线索自动化后自动生成" />
+          <el-empty v-if="!intelLoading && !intelError && signals.length === 0 && suggestions.length === 0" description="暂无情报数据" />
         </div>
       </el-tab-pane>
 
-      <el-tab-pane v-if="can('mdm.business-partner.read')" label="ERP客商候选" name="erp-match">
+      <el-tab-pane v-if="can('crm.company.read') && can('mdm.business-partner.read')" label="ERP客商候选" name="erp-match">
         <el-card shadow="never">
           <el-alert type="info" :closable="false" title="仅查询可能匹配的ERP客商；结果需人工核对，不表示已关联或已同步。" />
           <div style="margin: 16px 0">
@@ -212,6 +228,9 @@
         </el-form-item>
         <el-form-item label="手机">
           <el-input v-model="contactForm.mobile" />
+        </el-form-item>
+        <el-form-item label="电话">
+          <el-input v-model="contactForm.phone" />
         </el-form-item>
         <el-form-item label="微信">
           <el-input v-model="contactForm.wechat" />
@@ -312,13 +331,21 @@
 </template>
 
 <script setup lang="ts">
+import ContactActionValue from './ContactActionValue.vue';
 import { ref, reactive, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
-import { getCompany, getErpMatchCandidates, getContactsByCompany, createContact, deleteContact, getActivitiesByCompany, createActivity, listDeals, createDeal, listSignals, getOpportunitySuggestions } from '../../api/crm';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { getCompany, clearCompanyOwner, getErpMatchCandidates, getContactsByCompany, createContact, deleteContact, getActivitiesByCompany, createActivity, listDeals, createDeal, listSignals, getOpportunitySuggestions } from '../../api/crm';
 import type { SignalDto, OpportunitySuggestion } from '../../api/crm';
 import type { CompanyDto, ContactDto, ActivityDto, DealDto, CreateContactRequest, CreateActivityRequest, CreateDealRequest, ErpMatchResultDto } from '../../types/crm';
-import { BusinessCategory, DealStage } from '../../types/crm';
+import { BusinessCategory, DealStage, CustomerStatus, IntentRating, CompanyCity, CompanyIndustry, CompanyScale, DealStatus, FollowType } from '../../types/crm';
+import {
+  crmEnumNumber, crmLabel,
+  businessCategoryLabels, customerStatusLabels, intentRatingLabels,
+  companyIndustryLabels, companyScaleLabels, companyCityLabels,
+  dealStageLabels, dealStatusLabels, followTypeLabels,
+  signalTypeLabels, signalTypeValues, signalStatusLabels, signalStatusValues,
+} from '../../utils/crmEnum';
 import { useAuthStore } from '../../stores/auth';
 import { useCrmPermission } from '../../composables/useCrmPermission';
 
@@ -329,8 +356,10 @@ const can = useCrmPermission();
 const companyId = route.params.id as string;
 
 const loading = ref(false);
-const activeTab = ref('contacts');
+const companyError = ref('');
+const activeTab = ref(can('crm.contact.read') ? 'contacts' : can('crm.deal.read') ? 'deals' : can('crm.activity.read') ? 'activities' : 'intelligence');
 const company = ref<CompanyDto | null>(null);
+const clearingOwner = ref(false);
 const contacts = ref<ContactDto[]>([]);
 const activities = ref<ActivityDto[]>([]);
 const deals = ref<DealDto[]>([]);
@@ -340,6 +369,7 @@ const dealsError = ref(false);
 const signals = ref<SignalDto[]>([]);
 const suggestions = ref<OpportunitySuggestion[]>([]);
 const intelLoading = ref(false);
+const intelError = ref(false);
 const erpMatch = ref<ErpMatchResultDto | null>(null);
 const erpMatchLoading = ref(false);
 const erpMatchError = ref('');
@@ -353,6 +383,7 @@ const contactForm = reactive<CreateContactRequest>({
   name: '',
   position: '',
   mobile: '',
+  phone: '',
   wechat: '',
   email: '',
   isKeyPerson: false
@@ -378,23 +409,47 @@ const dealForm = reactive<CreateDealRequest>({
   remarks: ''
 });
 
+async function handleClearOwner() {
+  if (!company.value?.ownerId || clearingOwner.value) return;
+  try {
+    await ElMessageBox.confirm('清空后，该客户将暂时没有负责人。确定继续吗？', '清空负责人', { type: 'warning' });
+  } catch { return; }
+  clearingOwner.value = true;
+  try {
+    await clearCompanyOwner(companyId);
+    company.value = await getCompany(companyId);
+    ElMessage.success('负责人已清空');
+  } catch {
+    ElMessage.error('清空失败，请刷新后重试');
+  } finally {
+    clearingOwner.value = false;
+  }
+}
+
 async function loadData() {
   loading.value = true;
+  companyError.value = '';
   try {
     company.value = await getCompany(companyId);
     const [conts, acts, dls] = await Promise.allSettled([
-      getContactsByCompany(companyId),
-      getActivitiesByCompany(companyId),
-      listDeals({ companyId, page: 1, pageSize: 100 })
+      can('crm.contact.read') ? getContactsByCompany(companyId) : Promise.resolve([]),
+      can('crm.activity.read') ? getActivitiesByCompany(companyId) : Promise.resolve([]),
+      can('crm.deal.read') ? listDeals({ companyId, page: 1, pageSize: 100 }) : Promise.resolve({ items: [] })
     ]);
-    contactsError.value = conts.status === 'rejected';
-    activitiesError.value = acts.status === 'rejected';
-    dealsError.value = dls.status === 'rejected';
+    contactsError.value = can('crm.contact.read') && conts.status === 'rejected';
+    activitiesError.value = can('crm.activity.read') && acts.status === 'rejected';
+    dealsError.value = can('crm.deal.read') && dls.status === 'rejected';
     contacts.value = conts.status === 'fulfilled' ? conts.value : [];
     activities.value = acts.status === 'fulfilled' ? acts.value : [];
     deals.value = dls.status === 'fulfilled' ? dls.value.items : [];
   } catch (e: any) {
-    ElMessage.error(e.message || '加载失败');
+    company.value = null;
+    contacts.value = [];
+    activities.value = [];
+    deals.value = [];
+    companyError.value = e?.status === 403 || e?.status === 404
+      ? '客户不存在或无权访问。'
+      : '客户详情加载失败，请重新加载。';
   } finally {
     loading.value = false;
   }
@@ -423,18 +478,24 @@ async function loadErpMatch() {
 
 // ===== L2 销售情报卡 =====
 async function loadIntelligence() {
+  if (!can('crm.lead.read') || !company.value) return;
   intelLoading.value = true;
+  intelError.value = false;
+  signals.value = [];
+  suggestions.value = [];
   try {
     const comp = company.value;
     if (!comp) return;
     // 该企业的信号
-    const sigRes = await listSignals({ keyword: comp.fullName, pageSize: 50 });
+    const sigRes = await listSignals({ keyword: comp.fullName, page: 1, pageSize: 50 });
     signals.value = sigRes.items.filter(s => s.companyName === comp.fullName);
     // 该企业的商机建议
     const sugRes = await getOpportunitySuggestions();
     suggestions.value = sugRes.items.filter(s => s.targetName === comp.fullName);
-  } catch (e) {
-    console.error('加载情报失败', e);
+  } catch {
+    signals.value = [];
+    suggestions.value = [];
+    intelError.value = true;
   } finally {
     intelLoading.value = false;
   }
@@ -485,7 +546,7 @@ async function handleAddContact() {
     await createContact(contactForm);
     ElMessage.success('添加成功');
     showContactForm.value = false;
-    Object.assign(contactForm, { name: '', position: '', mobile: '', wechat: '', email: '', isKeyPerson: false });
+    Object.assign(contactForm, { name: '', position: '', mobile: '', phone: '', wechat: '', email: '', isKeyPerson: false });
     loadData();
   } catch (e: any) {
     ElMessage.error(e.message || '添加失败');
@@ -546,29 +607,51 @@ async function handleAddDeal() {
   }
 }
 
-function statusLabel(s: number) { return ['待联系', '跟进中', '已报价', '成交', '暂搁', '无效'][s] || '未知'; }
-function statusTagType(s: number) { return ['info', 'warning', 'primary', 'success', 'info', 'danger'][s] || 'info'; }
-function ratingLabel(r: number) { return ['A', 'B', 'C', 'D'][r] || '-'; }
-function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][r] || 'info'; }
-function cityLabel(c: number) { return ['潍坊', '青岛', '烟台', '济南', '淄博', '临沂', '山东其他', '省外'][c] || '其他'; }
-function industryLabel(i: number) { return ['机械制造', '纺织服装', '食品加工', '化工', '建材', '农业种植', '商贸流通', '服务业'][i] || '其他'; }
-function scaleLabel(s?: number) { return s === undefined ? '-' : ['≤20人', '21-100人', '101-300人', '301-1000人', '>1000人', '未知'][s] || '未知'; }
-function categoryLabel(c: number) { return ['企业建站', '网站优化', 'AI应用', 'GEO优化', '数字员工', '其他'][c] || '其他'; }
-function stageLabel(s: number) { return ['初步接触', '需求确认', '方案报价', '商务谈判', '成交', '丢单'][s] || '未知'; }
-function dealStatusLabel(s: number) { return ['进行中', '已成交', '已丢单', '暂搁'][s] || '未知'; }
-function dealStatusTagType(s: number) { return ['warning', 'success', 'danger', 'info'][s] || 'info'; }
-function followTypeLabel(t: number) { return ['电话', '微信', '拜访', '邮件', '会议', '其他'][t] || '其他'; }
+function statusLabel(s: number) { return crmLabel(customerStatusLabels, s, CustomerStatus); }
+function statusTagType(s: number) { return ['info', 'warning', 'primary', 'success', 'info', 'danger'][crmEnumNumber(s, CustomerStatus)] || 'info'; }
+function ratingLabel(r: number) { return crmLabel(intentRatingLabels, r, IntentRating, '-'); }
+function ratingTagType(r: number) { return ['success', 'warning', 'info', 'danger'][crmEnumNumber(r, IntentRating)] || 'info'; }
+function cityLabel(c: number) { return crmLabel(companyCityLabels, c, CompanyCity, '其他'); }
+function industryLabel(i: number) { return crmLabel(companyIndustryLabels, i, CompanyIndustry, '其他'); }
+function scaleLabel(s?: number) { return s === undefined ? '-' : crmLabel(companyScaleLabels, s, CompanyScale); }
+// This page used to carry its own 8-element array that stopped at index 7 and
+// spelled DouyinAddress "短视频地址", so self-media / foreign-trade deals fell
+// through to "其他" here while DealList.vue showed the real name.
+function categoryLabel(c: number) { return crmLabel(businessCategoryLabels, c, BusinessCategory, '其他'); }
+function stageLabel(s: number) { return crmLabel(dealStageLabels, s, DealStage); }
+function dealStatusLabel(s: number) { return crmLabel(dealStatusLabels, s, DealStatus); }
+function dealStatusTagType(s: number) { return ['warning', 'success', 'danger', 'info'][crmEnumNumber(s, DealStatus)] || 'info'; }
+function followTypeLabel(t: number) { return crmLabel(followTypeLabels, t, FollowType, '其他'); }
+
+// These two used to be inline arrays in the template. The TYPE one had only
+// 11 entries for a 14-value enum, so PoiMissing(10) rendered as「其他」and
+// SuspectedDelisted(11) / AnnouncementAlert(12) rendered as a bare number.
+function signalTypeLabel(t: number) { return crmLabel(signalTypeLabels, t, signalTypeValues, String(t)); }
+function signalStatusLabel(s: number) { return crmLabel(signalStatusLabels, s, signalStatusValues, String(s)); }
+function signalStatusTag(s: number) { return ['warning', 'success', 'info', 'primary'][crmEnumNumber(s, signalStatusValues)] || 'info'; }
 function formatDate(d: string) { return new Date(d).toLocaleString('zh-CN'); }
+
+function safeWebsiteHref(domain?: string | null): string | null {
+  const value = domain?.trim();
+  if (!value || /\s/.test(value)) return null;
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
+    if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(url.hostname)) return null;
+    return url.href;
+  } catch { return null; }
+}
 
 onMounted(async () => {
   await loadData();
-  loadIntelligence();
+  if (company.value) loadIntelligence();
 });
 </script>
 
 <style scoped>
 .crm-company-detail { padding: 16px; }
 .info-card { margin-top: 16px; margin-bottom: 16px; }
+.detail-error { margin-top: 16px; }
 .detail-tabs { margin-top: 8px; }
 .tab-header { display: flex; justify-content: space-between; align-items: center; }
 .activity-card { margin-bottom: 8px; }

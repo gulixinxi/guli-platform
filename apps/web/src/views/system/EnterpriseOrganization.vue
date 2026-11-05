@@ -6,8 +6,8 @@
         <p>{{ activeCompany?.name || '当前企业组织结构' }}</p>
       </div>
       <div class="toolbar-actions">
-        <el-button :icon="Plus" type="primary" @click="openOrgDialog">新增部门</el-button>
-        <el-button :icon="UserFilled" @click="openUserDialog">新增用户</el-button>
+        <el-button v-if="canManageOrg" :icon="Plus" type="primary" @click="openOrgDialog">新增部门</el-button>
+        <el-button v-if="canManageUsers" :icon="UserFilled" @click="openUserDialog">新增用户</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </div>
     </div>
@@ -76,6 +76,7 @@
               <span class="department-node">
                 <span>{{ data.name }}</span>
                 <el-button
+                  v-if="canManageOrg"
                   link
                   size="small"
                   type="warning"
@@ -100,10 +101,18 @@
         </el-table>
       </section>
 
-      <section class="org-section">
+      <section v-if="canReadUsers" class="org-section">
         <div class="section-title">用户列表</div>
-        <div v-if="canAssignRoles && !roles.some(role => role.code === 'CRM_OPERATOR')" style="margin-bottom: 12px">
+        <div v-if="canAssignRoles && canReadRoles && !roles.some(role => role.code === 'CRM_OPERATOR')" style="margin-bottom: 12px">
           <el-button :loading="creatingCrmRole" @click="createCrmRole">创建 CRM 操作角色</el-button>
+          <span style="margin-left: 8px">仅创建角色，不自动授予任何用户；创建后可在“调整权限”中分配。</span>
+        </div>
+        <div v-if="canAssignRoles && canReadRoles && !roles.some(role => role.code === 'CRM_IDENTITY_REVIEWER')" style="margin-bottom: 12px">
+          <el-button :loading="creatingReviewerRole" @click="createReviewerRole">创建身份审核员角色</el-button>
+          <span style="margin-left: 8px">仅创建角色，不自动授予任何用户；创建后可在“调整权限”中分配。</span>
+        </div>
+        <div v-if="canAssignRoles && canReadRoles && !roles.some(role => role.code === 'CRM_READONLY')" style="margin-bottom: 12px">
+          <el-button :loading="creatingReadOnlyRole" @click="createReadOnlyRole">创建 CRM 只读角色</el-button>
           <span style="margin-left: 8px">仅创建角色，不自动授予任何用户；创建后可在“调整权限”中分配。</span>
         </div>
         <el-table :data="users" size="small" stripe height="260">
@@ -114,7 +123,7 @@
           <el-table-column label="角色（所有范围）" min-width="220">
             <template #default="{ row }">{{ row.roles.join(', ') || '-' }}</template>
           </el-table-column>
-          <el-table-column v-if="canAssignRoles" label="权限操作" width="110" fixed="right">
+          <el-table-column v-if="canAssignRoles && canReadRoles" label="权限操作" width="110" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" :disabled="!activeCompany" @click="openRoleDialog(row)">调整权限</el-button>
             </template>
@@ -156,6 +165,9 @@
         <el-form-item label="姓名">
           <el-input v-model="userDialog.displayName" maxlength="80" />
         </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="userDialog.email" maxlength="256" type="email" placeholder="必填，用于创建登录账号" />
+        </el-form-item>
         <el-form-item label="初始密码">
           <el-input v-model="userDialog.password" type="password" show-password />
         </el-form-item>
@@ -169,7 +181,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="角色">
+        <el-form-item v-if="canAssignRoles" label="角色">
           <el-select v-model="userDialog.roleCodes" multiple clearable placeholder="可稍后分配">
             <el-option
               v-for="role in roles"
@@ -188,7 +200,7 @@
 
     <el-dialog v-model="roleDialog.visible" :title="`调整权限 · ${roleDialog.userName}`" width="520px">
       <p>仅调整当前公司 {{ activeCompany?.name }} 的角色；租户级角色不在此处修改。</p>
-      <p>这里只能授予列表中已有的角色。CRM_OPERATOR 支持核心业务读写；导入、导出和系统管理需要单独授权。</p>
+      <p>这里只能授予列表中已有的角色。CRM_READONLY 提供 CRM 核心业务只读；CRM_OPERATOR 支持核心业务读写；CRM_IDENTITY_REVIEWER 仅提供线索读取和身份审核；导入、导出和系统管理需要单独授权。</p>
       <el-form label-width="90px" v-loading="loadingRoles">
         <el-form-item label="公司角色">
           <el-select v-model="roleDialog.roleCodes" multiple clearable filterable placeholder="选择角色" style="width:100%">
@@ -212,10 +224,11 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Plus, Refresh, UserFilled } from '@element-plus/icons-vue';
 import {
-  assignEnterpriseRole,
   createEnterpriseUser,
   createOrganizationUnit,
   ensureCrmOperatorRole,
+  ensureCrmIdentityReviewerRole,
+  ensureCrmReadOnlyRole,
   getOrganizationTree,
   listEnterpriseRoles,
   listEnterpriseUserCompanyRoles,
@@ -244,6 +257,8 @@ const savingUser = ref(false);
 const loadingRoles = ref(false);
 const savingRoles = ref(false);
 const creatingCrmRole = ref(false);
+const creatingReviewerRole = ref(false);
+const creatingReadOnlyRole = ref(false);
 const roleError = ref('');
 const roleDialog = reactive({ visible: false, userId: '', userName: '', roleCodes: [] as string[], originalRoleCodes: [] as string[] });
 const selfRoleRemoval = computed(() => roleDialog.userId === auth.user?.userId
@@ -253,6 +268,7 @@ const userDialog = reactive({
   visible: false,
   userName: '',
   displayName: '',
+  email: '',
   password: '',
   organizationUnitId: '',
   roleCodes: [] as string[],
@@ -266,6 +282,10 @@ const departmentCount = computed(() => countDepartments(departmentTree.value));
 const employees = computed(() => flattenEmployees(departmentTree.value));
 const emptyDescription = computed(() => '尚未初始化企业组织');
 const canAssignRoles = computed(() => auth.user?.permissionCodes.includes('identity.role.assign') ?? false);
+const canReadRoles = computed(() => auth.user?.permissionCodes.includes('identity.role.read') ?? false);
+const canReadUsers = computed(() => auth.user?.permissionCodes.includes('identity.user.read') ?? false);
+const canManageUsers = computed(() => auth.user?.permissionCodes.includes('identity.user.manage') ?? false);
+const canManageOrg = computed(() => auth.user?.permissionCodes.includes('identity.organization.manage') ?? false);
 
 async function createCrmRole() {
   creatingCrmRole.value = true;
@@ -282,6 +302,36 @@ async function createCrmRole() {
   }
 }
 
+async function createReviewerRole() {
+  creatingReviewerRole.value = true;
+  try {
+    await ensureCrmIdentityReviewerRole();
+    roles.value = await listEnterpriseRoles();
+    ElMessage.success('身份审核员角色已创建，请为指定用户分配');
+  } catch (err) {
+    ElMessage.error(err instanceof ApiError && err.status === 403
+      ? '当前账号缺少角色分配权限或无权访问当前公司'
+      : '创建身份审核员角色失败，请检查企业与角色配置');
+  } finally {
+    creatingReviewerRole.value = false;
+  }
+}
+
+async function createReadOnlyRole() {
+  creatingReadOnlyRole.value = true;
+  try {
+    await ensureCrmReadOnlyRole();
+    roles.value = await listEnterpriseRoles();
+    ElMessage.success('CRM 只读角色已创建，请为指定用户分配');
+  } catch (err) {
+    ElMessage.error(err instanceof ApiError && err.status === 403
+      ? '当前账号缺少角色分配权限或无权访问当前公司'
+      : '创建 CRM 只读角色失败，请检查企业与角色配置');
+  } finally {
+    creatingReadOnlyRole.value = false;
+  }
+}
+
 async function load() {
   loading.value = true;
   error.value = '';
@@ -293,9 +343,9 @@ async function load() {
     companies.value = data.companies ?? [];
     if (companies.value.length > 0) {
       failedStep = '用户列表';
-      const userRows = await listEnterpriseUsers();
+      const userRows = canReadUsers.value ? await listEnterpriseUsers() : [];
       failedStep = '角色列表';
-      const roleRows = await listEnterpriseRoles();
+      const roleRows = canReadRoles.value ? await listEnterpriseRoles() : [];
       users.value = userRows;
       roles.value = roleRows;
     } else {
@@ -371,6 +421,7 @@ async function toggleOrgStatus(node: OrganizationUnitNodeDto) {
 function openUserDialog() {
   userDialog.userName = '';
   userDialog.displayName = '';
+  userDialog.email = '';
   userDialog.password = '';
   userDialog.organizationUnitId = activeCompany.value?.organizationUnits[0]?.organizationUnitId ?? '';
   userDialog.roleCodes = [];
@@ -379,23 +430,25 @@ function openUserDialog() {
 
 async function submitUser() {
   if (!activeCompany.value) return;
-  if (!userDialog.userName.trim() || !userDialog.displayName.trim() || !userDialog.password) {
-    ElMessage.warning('请填写用户名、姓名和初始密码');
+  if (!userDialog.userName.trim() || !userDialog.displayName.trim() || !userDialog.password || !userDialog.email.trim()) {
+    ElMessage.warning('请填写用户名、姓名、邮箱和初始密码');
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userDialog.email.trim())) {
+    ElMessage.warning('请填写有效的邮箱地址');
     return;
   }
   savingUser.value = true;
   try {
-    const created = await createEnterpriseUser({
+    await createEnterpriseUser({
       userName: userDialog.userName,
       displayName: userDialog.displayName,
       password: userDialog.password,
+      email: userDialog.email.trim(),
       companyId: activeCompany.value.companyId,
       organizationUnitId: userDialog.organizationUnitId || null,
-      roleCodes: [],
+      roleCodes: canAssignRoles.value ? [...userDialog.roleCodes] : [],
     });
-    for (const roleCode of userDialog.roleCodes) {
-      await assignEnterpriseRole(created.userId, roleCode, activeCompany.value.companyId);
-    }
     userDialog.password = '';
     userDialog.visible = false;
     ElMessage.success('用户已创建');

@@ -8,6 +8,7 @@ public static class CrmPolicies
     public const string LeadConvert = "LeadConvert";
     public const string LeadImport = "LeadImport";
     public const string LeadExport = "LeadExport";
+    public const string IdentityReview = "IdentityReview";
     public const string CompanyRead = "CompanyRead";
     public const string CompanyManage = "CompanyManage";
     public const string CompanyAssign = "CompanyAssign";

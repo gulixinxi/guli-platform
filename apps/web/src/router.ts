@@ -10,6 +10,8 @@ import Dashboard from './views/crm/Dashboard.vue';
 import OpportunitySuggestions from './views/crm/OpportunitySuggestions.vue';
 import SignalCenter from './views/crm/SignalCenter.vue';
 import QuakeSearch from './views/crm/QuakeSearch.vue';
+import IdentityCandidateDesk from './views/crm/IdentityCandidateDesk.vue';
+import DataSourceSettings from './views/crm/DataSourceSettings.vue';
 import CompanyReverseLookup from './views/crm/CompanyReverseLookup.vue';
 import ImportExportLogs from './views/crm/ImportExportLogs.vue';
 import { installAuthRoutes, installAuthGuard } from './router/auth';
@@ -21,6 +23,12 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     component: ErpShell,
     children: [
+      {
+        path: 'workbench',
+        name: 'platform-workbench',
+        component: () => import('./views/Workbench.vue'),
+        meta: { title: '业务工作台', module: 'home' },
+      },
       {
         path: '',
         redirect: '/login'
@@ -154,6 +162,18 @@ const routes: RouteRecordRaw[] = [
         name: 'CrmQuakeSearch',
         component: QuakeSearch,
         meta: { title: '线索采集', module: 'crm' }
+      },
+      {
+        path: 'crm/identity-candidates',
+        name: 'CrmIdentityCandidates',
+        component: IdentityCandidateDesk,
+        meta: { title: '企业身份待审资产', module: 'crm' }
+      },
+      {
+        path: 'crm/data-sources',
+        name: 'CrmDataSources',
+        component: DataSourceSettings,
+        meta: { title: '数据源设置', module: 'crm' }
       },
       {
         path: 'crm/reverse-lookup',

@@ -7,6 +7,7 @@
           <div>
             <el-button @click="showImport = true" :icon="Upload">上传单位清单</el-button>
             <el-button @click="showManual = true" :icon="Edit">手动添加</el-button>
+            <el-button @click="loadHistory">刷新历史</el-button>
             <el-button type="primary" @click="startLookup" :icon="Search" :loading="lookuping" :disabled="items.length === 0">
               开始反查
             </el-button>
@@ -15,7 +16,7 @@
       </template>
 
       <el-alert type="info" :closable="false" style="margin-bottom: 12px;">
-        上传单位清单 Excel（含"单位名称"列，可选"网址"列），系统自动查询 ICP 备案、网站状态、GEO 评分，并生成商机建议。
+        上传单位清单 Excel（含“单位名称”列，可选“网址”列）。提供网址后可查询 ICP、网站状态和 GEO 初测；未提供网址时结果保持未知，建议均需人工核验。
       </el-alert>
 
       <el-table :data="items" stripe border>
@@ -27,12 +28,12 @@
             <span v-else style="color: #999;">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="有网站" width="80">
+        <el-table-column label="网站核验" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.result" :type="row.result.hasWebsite ? 'success' : 'danger'" size="small">
-              {{ row.result.hasWebsite ? '有' : '无' }}
+            <el-tag v-if="row.result?.hasWebsite != null" :type="row.result.hasWebsite ? 'success' : 'warning'" size="small">
+              {{ row.result.hasWebsite ? '输入网址可访问' : '输入网址不可访问' }}
             </el-tag>
-            <span v-else>-</span>
+            <span v-else>未知</span>
           </template>
         </el-table-column>
         <el-table-column label="网站状态" width="100">
@@ -46,8 +47,8 @@
         <el-table-column label="ICP备案" width="120">
           <template #default="{ row }">
             <span v-if="row.result?.hasIcp === true" style="color: #67c23a;">{{ row.result.icpLicense }}</span>
-            <span v-else-if="row.result?.hasIcp === false" style="color: #e6a23c;">未备案</span>
-            <span v-else>-</span>
+            <span v-else-if="row.result?.hasIcp === false" style="color: #e6a23c;">未查到备案</span>
+            <span v-else>未知</span>
           </template>
         </el-table-column>
         <el-table-column label="备案企业" min-width="150">
@@ -71,7 +72,7 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row, $index }">
-            <el-button v-if="row.result" size="small" @click="importLead(row)">导入线索</el-button>
+            <el-button v-if="row.result" size="small" disabled title="企业身份审核尚未完成">待身份审核</el-button>
             <el-button size="small" type="danger" @click="items.splice($index, 1)">删除</el-button>
           </template>
         </el-table-column>
@@ -80,6 +81,26 @@
       <div v-if="items.length === 0" style="text-align: center; padding: 40px; color: #999;">
         暂无数据，请上传单位清单或手动添加
       </div>
+    </el-card>
+
+    <el-card class="history-card" shadow="never" v-loading="historyLoading">
+      <template #header>最近反查记录（当前公司，最多 100 条）</template>
+      <el-table :data="history" stripe size="small">
+        <el-table-column prop="queriedAt" label="查询时间" width="180">
+          <template #default="{ row }">{{ new Date(row.queriedAt).toLocaleString() }}</template>
+        </el-table-column>
+        <el-table-column prop="companyName" label="输入单位" min-width="170" />
+        <el-table-column prop="inputWebsite" label="输入网址" min-width="160">
+          <template #default="{ row }">{{ row.inputWebsite || '未提供' }}</template>
+        </el-table-column>
+        <el-table-column label="检测结果" min-width="160">
+          <template #default="{ row }">{{ row.result?.error || row.result?.websiteStatus || '未知' }}</template>
+        </el-table-column>
+        <el-table-column label="建议" min-width="260" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.result?.suggestion || '待人工核验' }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!historyLoading && history.length === 0" description="暂无保存的反查记录" />
     </el-card>
 
     <!-- 上传对话框 -->
@@ -118,19 +139,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Upload, Edit, Search, UploadFilled } from '@element-plus/icons-vue';
 import { readSpreadsheetRows } from '../../utils/spreadsheet';
-import { apiPost } from '../../api/http';
+import { apiGet, apiPost } from '../../api/http';
 
 interface LookupItem {
   companyName: string;
   website?: string;
   result?: any;
+  imported?: boolean;
+}
+
+interface LookupHistoryRecord {
+  id: number;
+  companyName: string;
+  inputWebsite?: string;
+  queriedAt: string;
+  result?: { error?: string; websiteStatus?: string; suggestion?: string };
 }
 
 const items = ref<LookupItem[]>([]);
+const history = ref<LookupHistoryRecord[]>([]);
+const historyLoading = ref(false);
 const lookuping = ref(false);
 const showImport = ref(false);
 const showManual = ref(false);
@@ -189,6 +221,7 @@ async function startLookup() {
         if (items.value[i]) items.value[i].result = r;
       });
       ElMessage.success(`反查完成：${res.items.length} 个单位`);
+      await loadHistory();
     }
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || '反查失败');
@@ -196,6 +229,20 @@ async function startLookup() {
     lookuping.value = false;
   }
 }
+
+async function loadHistory() {
+  historyLoading.value = true;
+  try {
+    const response = await apiGet<{ items: LookupHistoryRecord[] }>('/api/v1/crm/reverse-lookup/history');
+    history.value = response.items || [];
+  } catch {
+    ElMessage.error('反查历史加载失败');
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+onMounted(loadHistory);
 
 function websiteStatusType(status?: string) {
   if (!status) return 'info';
@@ -210,28 +257,11 @@ function geoScoreType(score: number) {
   return 'danger';
 }
 
-async function importLead(row: LookupItem) {
-  try {
-    const payload: any = {
-      companyName: row.companyName,
-      source: 6, // 转介绍/其他
-      websiteDomain: row.result?.domain || row.website,
-      remarks: row.result?.suggestion ? `反查建议：${row.result.suggestion}` : undefined
-    };
-    if (row.result?.icpCompanyName) {
-      payload.companyName = row.result.icpCompanyName;
-      payload.remarks = `原单位名：${row.companyName}；${payload.remarks || ''}`;
-    }
-    await apiPost('/api/v1/crm/leads', payload);
-    ElMessage.success('已导入线索池');
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '导入失败');
-  }
-}
 </script>
 
 <style scoped>
 .crm-reverse-lookup { padding: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .title { font-size: 16px; font-weight: 600; }
+.history-card { margin-top: 16px; }
 </style>

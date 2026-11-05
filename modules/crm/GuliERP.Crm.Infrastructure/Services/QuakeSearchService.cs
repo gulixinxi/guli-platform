@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using GuliERP.Crm.Application;
 using GuliERP.Crm.Domain.Enums;
-using Microsoft.Extensions.Configuration;
+using GuliERP.Foundation.Kernel;
 using Microsoft.Extensions.Logging;
 
 namespace GuliERP.Crm.Infrastructure.Services;
@@ -15,15 +15,23 @@ namespace GuliERP.Crm.Infrastructure.Services;
 public class QuakeSearchService
 {
     private readonly HttpClient _http;
-    private readonly IConfiguration _configuration;
+    private readonly QuakeRuntimeCredentialStore _credentials;
+    private readonly ICurrentTenant _tenant;
+    private readonly ICurrentCompany _company;
     private readonly ILogger<QuakeSearchService> _logger;
+    private readonly LegacyRequestTelemetry? _telemetry;
     private const string QuakeApiUrl = "https://quake.360.net/api/v3/search/quake_service";
 
-    public QuakeSearchService(HttpClient http, IConfiguration configuration, ILogger<QuakeSearchService> logger)
+    public QuakeSearchService(HttpClient http, QuakeRuntimeCredentialStore credentials,
+        ICurrentTenant tenant, ICurrentCompany company, ILogger<QuakeSearchService> logger,
+        LegacyRequestTelemetry? telemetry = null)
     {
         _http = http;
-        _configuration = configuration;
+        _credentials = credentials;
+        _tenant = tenant;
+        _company = company;
         _logger = logger;
+        _telemetry = telemetry;
     }
 
     /// <summary>
@@ -31,9 +39,7 @@ public class QuakeSearchService
     /// </summary>
     public async Task<List<QuakeSiteResult>> SearchAsync(string query, int size = 20, CancellationToken ct = default)
     {
-        var apiKey = _configuration["Quake:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("Quake API key is not configured.");
+        var candidates = _credentials.GetCandidates(_tenant.Id, _company.Id);
 
         // 手动构造 JSON，避免 JsonContent 自动加 charset 导致 Quake 报错
         var jsonBody = System.Text.Json.JsonSerializer.Serialize(new
@@ -44,23 +50,11 @@ public class QuakeSearchService
             ignore_cache = false
         });
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, QuakeApiUrl)
-        {
-            Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json"),
-            Headers = { { "X-QuakeToken", apiKey } }
-        };
-
         try
         {
-            var response = await _http.SendAsync(request, ct);
-            var raw = await response.Content.ReadAsStringAsync(ct);
-            _logger.LogInformation("Quake API HTTP {StatusCode}, response length {Len}", response.StatusCode, raw.Length);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError("Quake API 失败: {StatusCode}", response.StatusCode);
-                throw new Exception($"Quake API 返回 {response.StatusCode}");
-            }
+            var raw = await QuakeRequestSender.SendAsync(_http, QuakeApiUrl, jsonBody, candidates, ct,
+                outcome => _telemetry?.ObserveAsync(_tenant.Id, _company.Id, "quake", "search", outcome, ct) ?? Task.CompletedTask);
+            _logger.LogInformation("Quake API response length {Len}", raw.Length);
 
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
@@ -114,7 +108,7 @@ public class QuakeSearchService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Quake 搜索异常");
+            _logger.LogError("Quake 搜索异常 {ExceptionType}", ex.GetType().Name);
             throw;
         }
     }

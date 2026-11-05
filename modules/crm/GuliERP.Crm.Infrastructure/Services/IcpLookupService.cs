@@ -14,11 +14,14 @@ public class IcpLookupService
 
     // beian CLI 路径
     private const string BeianCli = "beian";
-    private const string PlaywrightBrowsersPath = "/home/user/.cache/ms-playwright";
+    private readonly string? _playwrightBrowsersPath;
+    private readonly bool _enabled;
 
-    public IcpLookupService(ILogger<IcpLookupService> logger)
+    public IcpLookupService(ILogger<IcpLookupService> logger, Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
     {
         _logger = logger;
+        _playwrightBrowsersPath = configuration?["Crm:PlaywrightBrowsersPath"];
+        _enabled = bool.TryParse(configuration?["Crm:Icp:Enabled"], out var enabled) && enabled;
     }
 
     /// <summary>
@@ -26,8 +29,12 @@ public class IcpLookupService
     /// </summary>
     public async Task<IcpResult?> LookupAsync(string domain, CancellationToken ct = default)
     {
+        if (!_enabled)
+            return new IcpResult { Domain = domain, Found = false, QueryStatus = "disabled", Error = "ICP 查询尚未启用。" };
         try
         {
+            domain = PublicWebTarget.Host(domain);
+            await PublicWebTarget.ResolveAsync(domain, ct);
             var psi = new ProcessStartInfo
             {
                 FileName = BeianCli,
@@ -39,7 +46,8 @@ public class IcpLookupService
             psi.ArgumentList.Add("--website");
             psi.ArgumentList.Add("--raw");
             psi.ArgumentList.Add(domain);
-            psi.Environment["PLAYWRIGHT_BROWSERS_PATH"] = PlaywrightBrowsersPath;
+            if (!string.IsNullOrWhiteSpace(_playwrightBrowsersPath))
+                psi.Environment["PLAYWRIGHT_BROWSERS_PATH"] = _playwrightBrowsersPath;
 
             using var proc = Process.Start(psi);
             if (proc == null)
@@ -78,7 +86,7 @@ public class IcpLookupService
             var first = root[0];
             if (!first.TryGetProperty("records", out var records) || records.ValueKind != JsonValueKind.Array || records.GetArrayLength() == 0)
             {
-                return new IcpResult { Domain = domain, Found = false };
+                return new IcpResult { Domain = domain, Found = false, QueryStatus = "not_found" };
             }
 
             var rec = records[0];
@@ -86,6 +94,7 @@ public class IcpLookupService
             {
                 Domain = GetStr(rec, "domain") ?? domain,
                 Found = true,
+                QueryStatus = "found",
                 UnitName = GetStr(rec, "unitName"),
                 Nature = GetStr(rec, "nature"),
                 ServiceLicence = GetStr(rec, "serviceLicence"),
@@ -93,10 +102,14 @@ public class IcpLookupService
                 UpdateDate = GetStr(rec, "updateDate")
             };
         }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return new IcpResult { Domain = domain, Found = false, QueryStatus = "not_configured", Error = "服务端未安装或未配置 beian CLI。" };
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "ICP 查询失败: {Domain}", domain);
-            return new IcpResult { Domain = domain, Found = false, Error = ex.Message };
+            _logger.LogError("ICP 查询失败 {Domain}: {ExceptionType}", domain, ex.GetType().Name);
+            return new IcpResult { Domain = domain, Found = false, QueryStatus = "error", Error = "ICP 查询失败，请稍后重试。" };
         }
     }
 
@@ -130,6 +143,7 @@ public class IcpResult
 {
     public string Domain { get; set; } = "";
     public bool Found { get; set; }
+    public string QueryStatus { get; set; } = "error"; // found / not_found / not_configured / error
     public string? UnitName { get; set; }       // 主办单位名称
     public string? Nature { get; set; }         // 单位性质（企业/个人等）
     public string? ServiceLicence { get; set; } // 网站备案号

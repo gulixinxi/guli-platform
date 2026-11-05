@@ -24,6 +24,10 @@ namespace GuliERP.Crm.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("company_no_seq", "crm");
+
+            modelBuilder.HasSequence("deal_no_seq", "crm");
+
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Activity", b =>
                 {
                     b.Property<long>("Id")
@@ -107,6 +111,103 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("activities", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.AiPreparationDraft", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ActualCostCents")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ClaimsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ContractVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("EstimatedCostCents")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("InputEvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("MaxCostCents")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("RequestKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReviewedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "RequestKey")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "TaskType", "Version")
+                        .IsUnique();
+
+                    b.ToTable("ai_preparation_drafts", "crm", t =>
+                        {
+                            t.HasCheckConstraint("CK_ai_preparation_cost", "\"Version\" > 0 AND \"EstimatedCostCents\" >= 0 AND \"MaxCostCents\" >= 0 AND \"ActualCostCents\" >= 0");
+
+                            t.HasCheckConstraint("CK_ai_preparation_status", "\"Status\" IN ('draft','unsupported','failed','cost_limit','approved','rejected')");
+                        });
                 });
 
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Company", b =>
@@ -326,6 +427,332 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.ToTable("contacts", "crm");
                 });
 
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ContactCandidate", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FieldSourcesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("IdentityCandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Position")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<long?>("PromotedContactId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReviewedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IdentityCandidateId", "Status");
+
+                    b.HasIndex("TenantId", "CompanyId", "IdentityCandidateId");
+
+                    b.ToTable("contact_candidates", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ContactCandidateEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("ActorId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateId", "OccurredAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId");
+
+                    b.ToTable("contact_candidate_events", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.DataSourceAuthorization", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AuthorizationReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CostNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("DailyQuota")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MonthlyQuota")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PermittedFields")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("RetentionDays")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("UpdatedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ValidFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "SourceCode")
+                        .IsUnique();
+
+                    b.ToTable("data_source_authorizations", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.DataSourceAuthorizationRevision", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ActorId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("AuthorizationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AuthorizationReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CostNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("DailyQuota")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MonthlyQuota")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PermittedFields")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("RetentionDays")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ValidFrom")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ValidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "AuthorizationId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("data_source_authorization_revisions", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.DataSourceExecutionAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AttemptNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("AuthorizationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestedFields")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("ReservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "AuthorizationId", "ReservedAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "RequestId", "AttemptNumber")
+                        .IsUnique();
+
+                    b.ToTable("data_source_execution_attempts", "crm");
+                });
+
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Deal", b =>
                 {
                     b.Property<long>("Id")
@@ -389,6 +816,12 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<long?>("SourceLeadDemandAssessmentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("SourceLeadDemandAssessmentVersion")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Stage")
                         .HasColumnType("integer");
 
@@ -412,6 +845,9 @@ namespace GuliERP.Crm.Infrastructure.Migrations
 
                     b.HasIndex("OwnerId");
 
+                    b.HasIndex("SourceLeadDemandAssessmentId")
+                        .IsUnique();
+
                     b.HasIndex("Stage");
 
                     b.HasIndex("Status");
@@ -419,6 +855,159 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("deals", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityCandidate", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AssetId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Domain")
+                        .IsRequired()
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)");
+
+                    b.Property<string>("ProposedName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReviewedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "Domain");
+
+                    b.HasIndex("TenantId", "CompanyId", "AssetId", "Status");
+
+                    b.ToTable("identity_candidates", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityEvidence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ClaimText")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("RecordedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "RecordedAt");
+
+                    b.ToTable("identity_evidence", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityReviewEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("ActorId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("identity_review_events", "crm");
                 });
 
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ImportExportLog", b =>
@@ -616,6 +1205,12 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.Property<int>("Source")
                         .HasColumnType("integer");
 
+                    b.Property<long?>("SourceIdentityCandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("SourceReverseLookupRecordId")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("SourceUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -661,7 +1256,369 @@ namespace GuliERP.Crm.Infrastructure.Migrations
 
                     b.HasIndex("WebsiteDomain");
 
+                    b.HasIndex("TenantId", "CompanyId", "SourceIdentityCandidateId")
+                        .IsUnique()
+                        .HasFilter("\"SourceIdentityCandidateId\" IS NOT NULL");
+
                     b.ToTable("leads", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.LeadAssessmentEvidence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AssessmentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("CollectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<long>("LeadId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "AssessmentId", "Version");
+
+                    b.HasIndex("TenantId", "CompanyId", "LeadId", "Category");
+
+                    b.ToTable("lead_assessment_evidence", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.LeadDemandAssessment", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Confidence")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Evidence")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<long>("LeadId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("NextAction")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ReviewerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "LeadId", "Category")
+                        .IsUnique();
+
+                    b.ToTable("lead_demand_assessments", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.LeadDemandAssessmentRevision", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Category")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Confidence")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Evidence")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<long>("LeadId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("NextAction")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ReviewerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "LeadId", "Category", "Version")
+                        .IsUnique();
+
+                    b.ToTable("lead_demand_assessment_revisions", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.LegacyRequestObservation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Route")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("SourceCode")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "SourceCode", "ObservedAt");
+
+                    b.ToTable("legacy_request_observations", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.QuakeAssetRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("Asn")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("AsnName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AsnOrganization")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CityCn")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CleanReasons")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("CleanScore")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CleanVerdict")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CountryCn")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Domain")
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)");
+
+                    b.Property<string>("Hostname")
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)");
+
+                    b.Property<bool>("Imported")
+                        .HasColumnType("boolean");
+
+                    b.Property<long?>("ImportedLeadId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OsName")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("Port")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProvinceCn")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("QuakeAssetId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RawJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("SceneCn")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ServerHeader")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ServiceName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ServiceProduct")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ServiceVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("SitePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Transport")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("VendorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("ObservedAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CleanVerdict");
+
+                    b.HasIndex("TenantId", "CompanyId", "Domain", "Port")
+                        .IsUnique();
+
+                    b.ToTable("quake_asset_records", "crm");
                 });
 
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.QuakeQueryHistory", b =>
@@ -709,6 +1666,48 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.HasIndex("TenantId", "CompanyId", "QueryHash", "QueriedAt");
 
                     b.ToTable("quake_query_history", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ReverseLookupRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("InputWebsite")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("QueriedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("TenantId", "CompanyId", "QueriedAt");
+
+                    b.ToTable("reverse_lookup_records", "crm");
                 });
 
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Signal", b =>
@@ -825,6 +1824,253 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.ToTable("signals", "crm");
                 });
 
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteContentEvidence", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Excerpt")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Limitation")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Observation")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("RecordedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ReportId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReviewedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ScenarioVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Status")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "RecordedAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "ReportId");
+
+                    b.ToTable("website_content_evidence", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteDiagnosticReport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AttemptLogJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ChecksJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("MethodVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("RequestedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("manual");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "NextAttemptAt", "RequestedAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("website_diagnostic_reports", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteRecheckChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ChangedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("IntervalDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(7);
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateId", "ChangedAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId");
+
+                    b.ToTable("website_recheck_changes", "crm");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteRecheckSchedule", b =>
+                {
+                    b.Property<long>("CandidateId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("IntervalDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(7);
+
+                    b.Property<DateTime?>("LastQueuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextDueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("TenantId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("UpdatedBy")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CandidateId");
+
+                    b.HasIndex("Enabled", "NextDueAt");
+
+                    b.HasIndex("TenantId", "CompanyId", "CandidateId")
+                        .IsUnique();
+
+                    b.ToTable("website_recheck_schedules", "crm");
+                });
+
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Activity", b =>
                 {
                     b.HasOne("GuliERP.Crm.Domain.Entities.Company", "CrmCompany")
@@ -843,6 +2089,16 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.Navigation("Deal");
                 });
 
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.AiPreparationDraft", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Contact", b =>
                 {
                     b.HasOne("GuliERP.Crm.Domain.Entities.Company", "CrmCompany")
@@ -854,6 +2110,46 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                     b.Navigation("CrmCompany");
                 });
 
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ContactCandidate", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "IdentityCandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.ContactCandidateEvent", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.ContactCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.DataSourceAuthorizationRevision", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.DataSourceAuthorization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "AuthorizationId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.DataSourceExecutionAttempt", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.DataSourceAuthorization", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "AuthorizationId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Deal", b =>
                 {
                     b.HasOne("GuliERP.Crm.Domain.Entities.Company", "CrmCompany")
@@ -863,6 +2159,92 @@ namespace GuliERP.Crm.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("CrmCompany");
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityCandidate", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.QuakeAssetRecord", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "AssetId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityEvidence", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.IdentityReviewEvent", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Lead", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "SourceIdentityCandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteContentEvidence", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GuliERP.Crm.Domain.Entities.WebsiteDiagnosticReport", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId", "ReportId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "CandidateId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteDiagnosticReport", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteRecheckChange", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GuliERP.Crm.Domain.Entities.WebsiteRecheckSchedule", b =>
+                {
+                    b.HasOne("GuliERP.Crm.Domain.Entities.IdentityCandidate", null)
+                        .WithOne()
+                        .HasForeignKey("GuliERP.Crm.Domain.Entities.WebsiteRecheckSchedule", "TenantId", "CompanyId", "CandidateId")
+                        .HasPrincipalKey("GuliERP.Crm.Domain.Entities.IdentityCandidate", "TenantId", "CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GuliERP.Crm.Domain.Entities.Company", b =>

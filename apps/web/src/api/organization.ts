@@ -165,6 +165,14 @@ export function ensureCrmOperatorRole(): Promise<void> {
   return apiPost<void>('/api/v1/organization/roles/crm-operator', {});
 }
 
+export function ensureCrmIdentityReviewerRole(): Promise<void> {
+  return apiPost<void>('/api/v1/organization/roles/crm-identity-reviewer', {});
+}
+
+export function ensureCrmReadOnlyRole(): Promise<void> {
+  return apiPost<void>('/api/v1/organization/roles/crm-read-only', {});
+}
+
 export function assignEnterpriseRole(
   userId: string,
   roleCode: string,

@@ -127,6 +127,10 @@ export async function assignCompany(id: string, ownerId: string): Promise<void> 
   return apiPost(`/api/v1/crm/companies/${id}/assign`, ownerId);
 }
 
+export async function clearCompanyOwner(id: string): Promise<void> {
+  return apiPost(`/api/v1/crm/companies/${id}/assign/clear`, {});
+}
+
 export async function updateCompanyStatus(id: string, status: number): Promise<void> {
   return apiPost(`/api/v1/crm/companies/${id}/status`, status);
 }
@@ -248,6 +252,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return apiGet<DashboardStats>('/api/v1/crm/dashboard/stats');
 }
 
+export interface BackupMonitorStatus {
+  overall: 'PASS' | 'FAIL' | 'UNKNOWN';
+  checkedAtUtc: string | null;
+  checks: Array<{ cadence: 'daily' | 'weekly' | 'all'; status: 'PASS' | 'FAIL'; reason: string }>;
+}
+
+export async function getBackupMonitorStatus(): Promise<BackupMonitorStatus> {
+  return apiGet<BackupMonitorStatus>('/api/v1/crm/backup-monitor/status');
+}
+
 // ===== 商机建议（规则引擎）=====
 export interface OpportunitySuggestion {
   targetType: string;
@@ -255,6 +269,10 @@ export interface OpportunitySuggestion {
   targetName: string;
   opportunityType: string;
   reason: string;
+  // Every rule branch on the server sets this; it is NOT optional. It was
+  // optional here while 5 of 8 branches omitted it, so the page silently
+  // rendered the fallback and the contract was untested.
+  assessmentStatus: string;
   evidence: string;
   priority: string;
   suggestedAmount: string;
@@ -267,9 +285,9 @@ export async function getOpportunitySuggestions(): Promise<{ total: number; item
 
 // ===== 企业情报信号 =====
 export interface SignalDto {
-  id: number;
-  leadId?: number;
-  companyRefId?: number;
+  id: string;
+  leadId?: string;
+  companyRefId?: string;
   companyName: string;
   type: number;
   title: string;
@@ -280,14 +298,14 @@ export interface SignalDto {
   collectedAt: string;
   confidence: number;
   status: number;
-  handledBy?: number;
+  handledBy?: string;
   handledAt?: string;
   handleNote?: string;
   evidenceType?: string;
   queryParams?: string;
   rawContent?: string;
   verificationStatus: number;
-  verifiedBy?: number;
+  verifiedBy?: string;
   verifiedAt?: string;
 }
 
@@ -299,12 +317,47 @@ export async function createSignal(data: Partial<SignalDto> & { companyName: str
   return apiPost('/api/v1/crm/signals', data);
 }
 
-export async function updateSignalStatus(id: number, status: number, handleNote?: string): Promise<SignalDto> {
+export async function updateSignalStatus(id: string, status: number, handleNote?: string): Promise<SignalDto> {
   return apiPut(`/api/v1/crm/signals/${id}/status`, { status, handleNote });
 }
 
-export async function updateSignalVerification(id: number, verificationStatus: number, rawContent?: string, verifyNote?: string): Promise<SignalDto> {
+export async function updateSignalVerification(id: string, verificationStatus: number, rawContent?: string, verifyNote?: string): Promise<SignalDto> {
   return apiPut(`/api/v1/crm/signals/${id}/verification`, { verificationStatus, rawContent, verifyNote });
+}
+
+export interface WebsiteSignalTarget {
+  signalId: string;
+  candidateId: string;
+  reportId: string;
+  evidenceId?: string;
+  asset: {
+    idText: string; batchId: string; domain?: string; hostname?: string;
+    ipAddress?: string; port?: number; title?: string; cleanVerdict: string;
+    cleanReasons?: string; observedAt: string; server?: string;
+  };
+}
+
+export interface WebsitePendingSummary {
+  total: number;
+  technical: number;
+  contentReview: number;
+  contentChange: number;
+  items: Array<{ id: string; companyName: string; title: string; source: string; collectedAt: string }>;
+}
+
+export async function getWebsitePendingSummary(): Promise<WebsitePendingSummary> {
+  return apiGet<WebsitePendingSummary>('/api/v1/crm/signals/website-pending-summary');
+}
+
+export async function getWebsiteSignalTarget(id: string): Promise<WebsiteSignalTarget> {
+  return apiGet(`/api/v1/crm/signals/${id}/website-target`);
+}
+export async function getWebsiteSignalDetail(id: string): Promise<SignalDto> {
+  return apiGet<SignalDto>(`/api/v1/crm/signals/${id}/website-detail`);
+}
+
+export async function decideWebsiteSignal(id: string, action: 'reviewed' | 'ignored', reason: string): Promise<void> {
+  await apiPost(`/api/v1/crm/signals/${id}/website-decision`, { action, reason });
 }
 
 // ===== 导入导出日志 API =====

@@ -1,6 +1,9 @@
 export type ShellModuleKey =
   | 'home'
   | 'crm'
+  | 'erp'
+  | 'lead'
+  | 'geo'
   | 'basic'
   | 'mdm'
   | 'sales'
@@ -40,7 +43,7 @@ export interface ShellNavigationModule {
   groups: ShellNavigationGroup[];
 }
 
-export const shellNavigation: ShellNavigationModule[] = [
+const legacyNavigation: ShellNavigationModule[] = [
   {
     key: 'home',
     label: '工作台',
@@ -84,6 +87,8 @@ export const shellNavigation: ShellNavigationModule[] = [
         items: [
           { id: 'crm-signals', label: '情报信号', icon: 'DataAnalysis', route: '/crm/signals', tabTitle: '情报信号', permissionKey: 'crm.lead.read' },
           { id: 'crm-quake', label: '线索采集', icon: 'Search', route: '/crm/quake', tabTitle: '线索采集', permissionKey: 'crm.lead.manage' },
+          { id: 'crm-identity-candidates', label: '身份待审资产', icon: 'OfficeBuilding', route: '/crm/identity-candidates', tabTitle: '身份待审资产', permissionKey: 'crm.lead.read' },
+          { id: 'crm-data-sources', label: '数据源设置', icon: 'Setting', route: '/crm/data-sources', tabTitle: '数据源设置', permissionKey: 'crm.lead.read' },
           { id: 'crm-reverse-lookup', label: '单位反查', icon: 'ZoomIn', route: '/crm/reverse-lookup', tabTitle: '单位反查', permissionKey: 'crm.lead.manage' },
           { id: 'crm-import-export-logs', label: '导入导出日志', icon: 'Tickets', route: '/crm/logs', tabTitle: '导入导出日志', permissionKey: 'crm.log.read' },
         ],
@@ -225,6 +230,28 @@ export const shellNavigation: ShellNavigationModule[] = [
   },
 ];
 
+// Platform systems own the first rail; existing ERP modules remain menu groups.
+const legacyModule = (key: ShellModuleKey) => legacyNavigation.find(module => module.key === key)!;
+export const shellNavigation: ShellNavigationModule[] = [
+  {
+    ...legacyModule('home'),
+    groups: [{ label: '工作台', items: [
+      { id: 'platform-workbench', label: '业务工作台', icon: 'HomeFilled', route: '/workbench', tabTitle: '业务工作台' },
+    ] }],
+  },
+  { ...legacyModule('crm'), label: 'GuliCRM', shortLabel: 'CRM' },
+  {
+    key: 'erp', label: 'GuliERP', shortLabel: 'ERP', icon: 'Sell',
+    groups: (['basic', 'mdm', 'sales', 'purchase', 'inventory', 'production', 'quality'] as ShellModuleKey[])
+      .flatMap(key => legacyModule(key).groups.map(group => ({
+        ...group, label: `${legacyModule(key).label} · ${group.label}`,
+      }))),
+  },
+  { key: 'lead', label: 'Guli Lead', shortLabel: 'Lead', icon: 'Search', disabled: true, placeholder: 'Guli Lead 规划中', groups: [] },
+  { key: 'geo', label: 'Guli GEO', shortLabel: 'GEO', icon: 'DataLine', disabled: true, placeholder: 'Guli GEO 规划中', groups: [] },
+  { ...legacyModule('system'), label: '平台设置', shortLabel: '设置' },
+];
+
 export function findNavigationItemByRoute(path: string): ShellNavigationItem | undefined {
   return shellNavigation
     .flatMap(module => module.groups.flatMap(group => group.items))
@@ -245,6 +272,7 @@ export function canAccessNavigationItem(item: ShellNavigationItem, permissions: 
 
 export function defaultAuthorizedRoute(permissions: readonly string[]): string {
   const routes = [
+    '/workbench',
     '/system/enterprise-organization', '/mdm', '/mdm/employees',
     '/crm/dashboard', '/crm/leads', '/crm/companies', '/crm/deals',
     '/sales-orders', '/purchase/orders',

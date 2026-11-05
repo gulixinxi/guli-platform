@@ -2,6 +2,23 @@
   <div class="dashboard">
     <h2 class="page-title">经营看板</h2>
 
+    <el-alert
+      v-if="can('identity.role.assign') && backupStatus?.overall !== 'PASS'"
+      :title="backupStatus?.overall === 'FAIL' ? '正式库备份异常，请管理员立即检查' : '正式库备份状态未知，请管理员检查监控任务'"
+      type="error"
+      :closable="false"
+      show-icon
+      style="margin-bottom:16px;"
+    />
+    <el-alert
+      v-if="can('identity.role.assign') && backupStatus?.overall === 'PASS'"
+      :title="`正式库备份正常；最近检查：${backupStatus.checkedAtUtc ? new Date(backupStatus.checkedAtUtc).toLocaleString() : '未知'}`"
+      type="success"
+      :closable="false"
+      show-icon
+      style="margin-bottom:16px;"
+    />
+
     <el-alert v-if="loadError" title="看板数据加载失败，请重试。" type="error" :closable="false" show-icon>
       <template #default>
         <el-button link type="primary" @click="loadStats">重新加载</el-button>
@@ -46,6 +63,15 @@
     </el-alert>
 
     <!-- 顶部统计卡片 -->
+    <el-card v-if="can('crm.lead.read')" shadow="never" class="website-reminders">
+      <template #header><div class="website-header"><strong>网站情报待核对</strong><el-button link type="primary" :loading="websiteLoading" @click="loadWebsiteSignals">刷新</el-button></div></template>
+      <el-alert v-if="websiteError" :title="websiteError" type="error" :closable="false" />
+      <template v-else-if="websiteSummary">
+        <span>待处理 {{ websiteSummary.total }} 条：技术变化 {{ websiteSummary.technical }}、内容待核对 {{ websiteSummary.contentReview }}、内容差异 {{ websiteSummary.contentChange }}</span>
+        <el-button link type="primary" @click="router.push('/crm/signals')">到情报信号处理</el-button>
+      </template>
+    </el-card>
+
     <el-row :gutter="16" class="stat-cards">
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
@@ -160,12 +186,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { getDashboardStats, type DashboardStats } from '../../api/crm';
+import { getBackupMonitorStatus, getDashboardStats, getWebsitePendingSummary, type BackupMonitorStatus, type DashboardStats, type WebsitePendingSummary } from '../../api/crm';
+import { useCrmPermission } from '../../composables/useCrmPermission';
 
 const router = useRouter();
+const can = useCrmPermission();
 const stats = ref<DashboardStats | null>(null);
+const websiteSummary = ref<WebsitePendingSummary | null>(null);
+const websiteLoading = ref(false);
+const websiteError = ref('');
+const backupStatus = ref<BackupMonitorStatus | null>(null);
+let backupStatusTimer: ReturnType<typeof setInterval> | undefined;
 const loading = ref(false);
 const loadError = ref(false);
 
@@ -186,7 +219,30 @@ async function loadStats() {
   }
 }
 
-onMounted(loadStats);
+async function loadWebsiteSignals() {
+  if (!can('crm.lead.read')) return;
+  websiteLoading.value = true; websiteError.value = ''; websiteSummary.value = null;
+  try { websiteSummary.value = await getWebsitePendingSummary(); }
+  catch (error: any) { websiteError.value = error?.detail || '网站提醒加载失败'; }
+  finally { websiteLoading.value = false; }
+}
+
+async function loadBackupStatus() {
+  try { backupStatus.value = await getBackupMonitorStatus(); }
+  catch { backupStatus.value = null; }
+}
+
+onMounted(() => {
+  loadStats(); loadWebsiteSignals();
+  if (can('identity.role.assign')) {
+    loadBackupStatus();
+    backupStatusTimer = setInterval(loadBackupStatus, 60_000);
+  }
+});
+
+onUnmounted(() => {
+  if (backupStatusTimer) clearInterval(backupStatusTimer);
+});
 
 const funnelStages = computed(() => {
   if (!stats.value) return [];
@@ -215,6 +271,8 @@ function formatAmount(v?: number): string {
 <style scoped>
 .dashboard { padding: 16px; }
 .page-title { margin: 0 0 16px; font-size: 20px; }
+.website-reminders { margin-bottom: 16px; }
+.website-header { display: flex; justify-content: space-between; align-items: center; }
 .stat-cards { margin-bottom: 16px; }
 .stat-card { text-align: center; }
 .stat-label { color: #909399; font-size: 14px; margin-bottom: 8px; }

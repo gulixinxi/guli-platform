@@ -33,6 +33,26 @@
       </el-table>
       <el-empty v-if="tasks.length === 0 && !loading" description="今日暂无待办" />
     </el-card>
+    <el-card v-if="can('crm.lead.read')" shadow="never" class="website-card">
+      <template #header>
+        <div class="card-header">
+          <div><span class="title">网站情报待核对</span><span class="hint">当前公司范围，独立于客户跟进任务</span></div>
+          <el-button size="small" :loading="websiteLoading" @click="loadWebsiteSignals">刷新</el-button>
+        </div>
+      </template>
+      <el-alert v-if="websiteError" :title="websiteError" type="error" :closable="false" />
+      <template v-if="websiteSummary">
+        <p class="website-count">待处理 {{ websiteSummary.total }} 条：技术变化 {{ websiteSummary.technical }}、内容待核对 {{ websiteSummary.contentReview }}、内容差异 {{ websiteSummary.contentChange }}</p>
+        <el-table :data="websiteSummary.items" size="small" stripe>
+          <el-table-column prop="companyName" label="企业" min-width="170" />
+          <el-table-column prop="title" label="提醒" min-width="220" />
+          <el-table-column label="类型" width="125"><template #default="{ row }">{{ websiteSourceLabel(row.source) }}</template></el-table-column>
+          <el-table-column label="操作" width="100"><template #default="{ row }"><el-button link type="primary" @click="openWebsiteSignal(row.id)">核对</el-button></template></el-table-column>
+        </el-table>
+        <el-button v-if="websiteSummary.total > websiteSummary.items.length" link type="primary" @click="router.push('/crm/signals')">查看全部提醒</el-button>
+        <el-empty v-if="websiteSummary.total === 0" description="目前没有网站情报待核对" />
+      </template>
+    </el-card>
   </div>
 </template>
 
@@ -40,7 +60,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { getTodayTasks, completeActivityTask } from '../../api/crm';
+import { getTodayTasks, completeActivityTask, getWebsitePendingSummary, type WebsitePendingSummary } from '../../api/crm';
 import type { TodayTaskDto } from '../../types/crm';
 import { useAuthStore } from '../../stores/auth';
 import { useCrmPermission } from '../../composables/useCrmPermission';
@@ -50,6 +70,9 @@ const auth = useAuthStore();
 const can = useCrmPermission();
 const loading = ref(false);
 const tasks = ref<TodayTaskDto[]>([]);
+const websiteSummary = ref<WebsitePendingSummary | null>(null);
+const websiteLoading = ref(false);
+const websiteError = ref('');
 const filterMode = ref<'mine' | 'all'>('mine');
 
 const isAdmin = computed(() => auth.user?.isPlatformAdmin || auth.user?.userName === 'admin');
@@ -73,6 +96,18 @@ function goCompany(id: string) {
   router.push(`/crm/companies/${id}`);
 }
 
+function websiteSourceLabel(source: string) {
+  return ({ 'website-diagnostic': '技术变化', 'website-content-review': '内容待核对', 'website-content-change': '内容差异' } as Record<string, string>)[source] || source;
+}
+function openWebsiteSignal(id: string) { router.push({ path: '/crm/signals', query: { websiteSignalId: id } }); }
+async function loadWebsiteSignals() {
+  if (!can('crm.lead.read')) return;
+  websiteLoading.value = true; websiteError.value = ''; websiteSummary.value = null;
+  try { websiteSummary.value = await getWebsitePendingSummary(); }
+  catch (error: any) { websiteError.value = error?.detail || '网站提醒加载失败'; }
+  finally { websiteLoading.value = false; }
+}
+
 async function handleComplete(row: TodayTaskDto) {
   try {
     await completeActivityTask(row.activityId);
@@ -83,11 +118,14 @@ async function handleComplete(row: TodayTaskDto) {
   }
 }
 
-onMounted(loadData);
+onMounted(() => { loadData(); loadWebsiteSignals(); });
 </script>
 
 <style scoped>
 .crm-today-tasks { padding: 16px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .title { font-size: 16px; font-weight: 600; }
+.website-card { margin-top: 16px; }
+.hint { margin-left: 10px; color: #909399; font-size: 12px; }
+.website-count { margin: 0 0 12px; color: #606266; }
 </style>

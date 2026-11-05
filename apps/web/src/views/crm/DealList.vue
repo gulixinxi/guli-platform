@@ -6,7 +6,7 @@
           <span class="title">商机管理</span>
           <div>
             <el-button size="small" @click="handleExport" :icon="Download">导出Excel</el-button>
-            <el-button v-if="can('crm.deal.manage')" type="primary" size="small" @click="showDealForm = true">新建商机</el-button>
+            <el-button v-if="can('crm.deal.manage')" type="primary" size="small" @click="router.push('/crm/leads')">从已确认需求创建商机</el-button>
           </div>
         </div>
       </template>
@@ -23,10 +23,10 @@
         <el-table-column label="阶段" width="150">
           <template #default="{ row }">
             <el-select
-              v-model="row.stage"
+              :model-value="crmEnumNumber(row.stage, DealStage)"
               size="small"
-              :disabled="!can('crm.deal.manage') || row.status !== 0"
-              @change="handleStageChange(row)"
+              :disabled="!can('crm.deal.manage') || crmEnumNumber(row.status, DealStatus) !== DealStatus.InProgress"
+              @change="(stage: number) => handleStageChange(row, stage)"
               style="width:100%"
             >
               <el-option label="初步接触" :value="0" />
@@ -50,12 +50,12 @@
           <template #default="{ row }">
             <el-button
               link type="success" size="small"
-              :disabled="row.status !== 0"
+              :disabled="crmEnumNumber(row.status, DealStatus) !== DealStatus.InProgress"
               @click="handleWin(row)"
             >赢单</el-button>
             <el-button
               link type="danger" size="small"
-              :disabled="row.status !== 0"
+              :disabled="crmEnumNumber(row.status, DealStatus) !== DealStatus.InProgress"
               @click="openLoseDialog(row)"
             >输单</el-button>
           </template>
@@ -74,6 +74,7 @@
 
     <!-- 新建商机对话框 -->
     <el-dialog v-model="showDealForm" title="新建商机" width="520px">
+      <el-alert type="info" :closable="false" title="正式商机须从已确认的线索需求评估发起。" />
       <el-form :model="dealForm" label-width="90px">
         <el-form-item label="商机名称" required>
           <el-input v-model="dealForm.name" placeholder="如：官网重建项目" />
@@ -95,6 +96,8 @@
             <el-option label="AI应用" :value="2" />
             <el-option label="GEO优化" :value="3" />
             <el-option label="数字员工" :value="4" />
+            <el-option label="自媒体运营" :value="8" />
+            <el-option label="外贸获客" :value="9" />
             <el-option label="其他" :value="99" />
           </el-select>
         </el-form-item>
@@ -156,7 +159,8 @@ import {
   listDeals, createDeal, updateDealStage, winDeal, loseDeal, listCompanies, getCompany
 } from '../../api/crm';
 import type { DealDto, CreateDealRequest, CompanyDto } from '../../types/crm';
-import { BusinessCategory, DealStage, LostReason } from '../../types/crm';
+import { BusinessCategory, DealStage, DealStatus, LostReason } from '../../types/crm';
+import { crmEnumNumber, crmLabel, businessCategoryLabels, dealStageLabels, dealStatusLabels } from '../../utils/crmEnum';
 import { exportToExcel } from '../../utils/exportExcel';
 import { useCrmPermission } from '../../composables/useCrmPermission';
 
@@ -209,6 +213,9 @@ async function loadCompanies() {
 }
 
 async function handleCreateDeal() {
+  if (!dealForm.sourceLeadDemandAssessmentId || !dealForm.sourceLeadDemandAssessmentVersion) {
+    ElMessage.warning('请从线索的已确认需求评估发起商机'); return;
+  }
   if (!dealForm.name.trim()) { ElMessage.warning('请输入商机名称'); return; }
   if (!dealForm.crmCompanyId) { ElMessage.warning('请选择客户'); return; }
   if (!dealForm.expectedAmount || dealForm.expectedAmount <= 0) { ElMessage.warning('请输入预计金额'); return; }
@@ -219,7 +226,8 @@ async function handleCreateDeal() {
     Object.assign(dealForm, {
       name: '', crmCompanyId: '', category: BusinessCategory.WebsiteBuild,
       expectedAmount: 0, stage: DealStage.InitialContact,
-      expectedCloseMonth: '', winRate: 20, remarks: ''
+      expectedCloseMonth: '', winRate: 20, remarks: '',
+      sourceLeadDemandAssessmentId: undefined, sourceLeadDemandAssessmentVersion: undefined
     });
     loadData();
   } catch (e: any) {
@@ -227,10 +235,10 @@ async function handleCreateDeal() {
   }
 }
 
-async function handleStageChange(row: DealDto) {
+async function handleStageChange(row: DealDto, stage: number) {
   try {
-    await updateDealStage(row.id, row.stage);
-    ElMessage.success(`已推进到「${stageLabel(row.stage)}」`);
+    await updateDealStage(row.id, stage);
+    ElMessage.success(`已推进到「${stageLabel(stage)}」`);
     loadData();
   } catch (e: any) {
     ElMessage.error(e.message || '阶段更新失败');
@@ -268,10 +276,10 @@ async function handleLose() {
   }
 }
 
-function categoryLabel(c: number) { return ['企业建站', '网站优化', 'AI应用', 'GEO优化', '数字员工', '其他'][c] || '其他'; }
-function stageLabel(s: number) { return ['初步接触', '需求确认', '方案报价', '商务谈判', '成交', '丢单'][s] || '未知'; }
-function statusLabel(s: number) { return ['进行中', '已成交', '已丢单', '暂搁'][s] || '未知'; }
-function statusTagType(s: number) { return ['warning', 'success', 'danger', 'info'][s] || 'info'; }
+function categoryLabel(c: number) { return crmLabel(businessCategoryLabels, c, BusinessCategory, '其他'); }
+function stageLabel(s: number) { return crmLabel(dealStageLabels, s, DealStage); }
+function statusLabel(s: number) { return crmLabel(dealStatusLabels, s, DealStatus); }
+function statusTagType(s: number) { return ['warning', 'success', 'danger', 'info'][crmEnumNumber(s, DealStatus)] || 'info'; }
 
 onMounted(async () => {
   await loadCompanies();
@@ -282,9 +290,13 @@ onMounted(async () => {
     const companyId = route.query.companyId as string | undefined;
     const category = route.query.category as string;
     const suggestion = route.query.suggestion as string;
+    const sourceAssessmentId = route.query.sourceAssessmentId as string | undefined;
+    const sourceVersion = route.query.sourceVersion as string | undefined;
 
-    if (!companyId || !/^\d+$/.test(companyId)) {
-      ElMessage.warning('商机建议缺少有效客户ID，请从客户主档选择客户。');
+    if (!companyId || !/^\d+$/.test(companyId)
+      || !sourceAssessmentId || !/^\d+$/.test(sourceAssessmentId)
+      || !sourceVersion || !/^\d+$/.test(sourceVersion)) {
+      ElMessage.warning('请从线索的已确认需求评估发起商机。');
       router.replace({ path: '/crm/deals' });
       return;
     }
@@ -302,6 +314,10 @@ onMounted(async () => {
     }
     if (category) {
       dealForm.category = Number(category);
+    }
+    if (sourceAssessmentId && /^\d+$/.test(sourceAssessmentId) && sourceVersion && /^\d+$/.test(sourceVersion)) {
+      dealForm.sourceLeadDemandAssessmentId = sourceAssessmentId;
+      dealForm.sourceLeadDemandAssessmentVersion = Number(sourceVersion);
     }
     if (suggestion) {
       dealForm.remarks = `商机来源：商机建议引擎 - ${suggestion}`;

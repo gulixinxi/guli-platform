@@ -53,6 +53,20 @@ builder.Configuration
     .AddEnvironmentVariables(prefix: "GULIERP_")
     .AddUserSecrets<Program>(optional: true);
 
+// IIS can supply a non-secret connection target plus a Windows Credential
+// Manager reference under the dedicated application-pool account. The real
+// password is never written to web.config, appsettings, or the release ZIP.
+var dbCredentialTarget = Environment.GetEnvironmentVariable("GULIERP_DB_PASSWORD_CREDENTIAL_TARGET");
+if (!string.IsNullOrWhiteSpace(dbCredentialTarget))
+{
+    var resolvedConnection = WindowsDatabaseCredentialSource.Resolve(
+        builder.Configuration.GetConnectionString("GuliERP"), dbCredentialTarget);
+    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["ConnectionStrings:GuliERP"] = resolvedConnection
+    });
+}
+
 // --- 2. Logging ---
 //     Structured console, no PII (per META_GULI §1.4 + HR-9).
 //     No real password ever appears in a log line: the Redact() helper below
@@ -91,6 +105,19 @@ if (connectionString.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
         "Configuration validation failed: ConnectionStrings:GuliERP still contains CHANGE_ME. " +
         "Set a real operator PostgreSQL connection string via ConnectionStrings__GuliERP or " +
         "GULIERP_ConnectionStrings__GuliERP; placeholder credentials are not accepted.");
+}
+
+// Production must prove the approved target before any hosted worker can start.
+// This is read-only and intentionally fails closed until release registration is complete.
+if (builder.Environment.IsProduction())
+{
+    // Read the release registration only from process environment variables.
+    // Appsettings, user secrets and command-line arguments cannot silently supply it.
+    var releaseTarget = new ConfigurationBuilder()
+        .AddEnvironmentVariables(prefix: "GULIERP_RELEASE_DB_")
+        .Build();
+    await ReleaseDatabaseTargetGuard.VerifyAsync(
+        connectionString, releaseTarget);
 }
 
 // Log the redacted connection string so the operator can see what the host
@@ -310,6 +337,7 @@ var app = builder.Build();
 
 app.UseMiddleware<RequestContextMiddleware>();
 app.UseExceptionHandler();   // delegates to AuthenticationExceptionHandler FIRST, then FoundationExceptionHandler
+app.UseMiddleware<MalformedRequestStatusMiddleware>(); // body-binding 400 can bypass exception handlers
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseRouting();
 app.UseAuthentication();     // G2-004: sets HttpContext.User from the auth cookie
@@ -332,6 +360,13 @@ app.Use(async (http, next) =>
 app.UseAuthenticationContext();   // G2-004: claims → ICurrentTenant/Company/User (D-003 closure)
 app.UseRateLimiter();
 app.UseAuthorization();      // G2-005: endpoint policy evaluation after routing
+
+// The offline IIS package places the Vite build in api/wwwroot so browser
+// routes and relative /api/v1 requests share one origin. No files are served
+// when the web build is absent (including API-only test hosts).
+var spaIndexPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "index.html");
+var serveSpa = app.Environment.IsProduction() && File.Exists(spaIndexPath);
+if (serveSpa) app.UseStaticFiles();
 
 // --- 9. OpenAPI (dev) ---
 if (app.Environment.IsDevelopment())
@@ -471,9 +506,29 @@ if (app.Environment.IsEnvironment("Testing"))
 // --- 12. Last-resort 404 → ProblemDetails (G2-002 §8) ---
 //     Placed AFTER endpoint mapping so it only fires for genuinely
 //     unmatched paths.
+if (serveSpa)
+{
+    app.MapFallback((HttpContext http) =>
+    {
+        var path = http.Request.Path;
+        var isUiRoute = path == "/login" || path == "/change-password-required"
+            || path == "/403" || path == "/bootstrap" || path == "/workbench"
+            || path.StartsWithSegments("/crm") || path.StartsWithSegments("/mdm")
+            || path.StartsWithSegments("/system") || path.StartsWithSegments("/sales")
+            || path.StartsWithSegments("/sales-order") || path.StartsWithSegments("/sales-orders")
+            || path.StartsWithSegments("/purchase") || path.StartsWithSegments("/purchase-orders");
+        if ((!HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method))
+            || !isUiRoute)
+            return (IResult)Results.NotFound();
+        http.Response.Headers.CacheControl = "no-store";
+        return Results.File(spaIndexPath, "text/html; charset=utf-8");
+    });
+}
 app.UseMiddleware<RouteNotFoundMiddleware>();
 
 // --- 13. Root / banner ---
+if (serveSpa) app.MapGet("/", () => Results.Redirect("/login"));
+else
 app.MapGet("/", () => Results.Text(
     "GuliERP Api (G2-001 + G2-002 + G2-003 + G2-004 + MDM-001 + DOC-KERNEL-001)\n" +
     "Endpoints:\n" +

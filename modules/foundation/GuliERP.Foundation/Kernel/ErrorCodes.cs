@@ -26,6 +26,20 @@ public static class ErrorCodes
     public const string RouteNotFound = "route_not_found";
 
     /// <summary>
+    /// The HTTP request itself could not be accepted before it reached
+    /// business logic: malformed request body, unsupported Content-Type,
+    /// oversized payload, invalid Content-Length. This is a CALLER
+    /// fault, so the response is 4xx rather than 500 — resending the
+    /// identical request can never succeed, and a 5xx makes clients
+    /// retry a request that is guaranteed to fail again.
+    ///
+    /// <para>Distinct from <see cref="ValidationFailed"/>: that code means
+    /// the request parsed correctly but a field failed validation. This
+    /// code means the request never parsed.</para>
+    /// </summary>
+    public const string MalformedRequest = "malformed_request";
+
+    /// <summary>
     /// Request body / query / path failed validation. The
     /// <c>errors</c> field of the ProblemDetails response carries the
     /// per-field error list.

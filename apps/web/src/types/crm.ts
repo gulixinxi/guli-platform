@@ -115,6 +115,8 @@ export enum BusinessCategory {
   PoiAnnotation = 5,
   DouyinAddress = 6,
   StoreInfoComplete = 7,
+  SocialMedia = 8,
+  ForeignTradeLeads = 9,
   Other = 99
 }
 
@@ -503,6 +505,8 @@ export interface CreateDealRequest {
   winRate?: number;
   ownerId?: string;
   remarks?: string;
+  sourceLeadDemandAssessmentId?: string;
+  sourceLeadDemandAssessmentVersion?: number;
 }
 
 export interface UpdateDealRequest {

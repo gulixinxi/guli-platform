@@ -42,6 +42,8 @@ import { ref, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { listImportExportLogs } from '../../api/crm';
 import type { ImportExportLogDto } from '../../types/crm';
+import { LogStatus, OperationType } from '../../types/crm';
+import { crmEnumNumber, crmLabel, logStatusLabels, operationTypeLabels } from '../../utils/crmEnum';
 
 const loading = ref(false);
 const list = ref<ImportExportLogDto[]>([]);
@@ -62,8 +64,8 @@ async function loadData() {
   }
 }
 
-function opTypeLabel(t: number) { return ['导入', '导出', '批量删除', '批量改派'][t] || '未知'; }
-function statusLabel(s: number) { return ['成功', '部分失败', '失败'][s] || '未知'; }
+function opTypeLabel(t: number) { return crmLabel(operationTypeLabels, t, OperationType); }
+function statusLabel(s: number) { return crmLabel(logStatusLabels, s, LogStatus); }
 function statusTagType(s: number) { return ['success', 'warning', 'danger'][s] || 'info'; }
 function formatDate(d: string) { return new Date(d).toLocaleString('zh-CN'); }
 

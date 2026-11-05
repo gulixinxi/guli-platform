@@ -31,6 +31,25 @@ public class CrmDbContext : DbContext
     public DbSet<ImportExportLog> ImportExportLogs => Set<ImportExportLog>();
     public DbSet<Signal> Signals => Set<Signal>();
     public DbSet<QuakeQueryHistory> QuakeQueryHistories => Set<QuakeQueryHistory>();
+    public DbSet<QuakeAssetRecord> QuakeAssetRecords => Set<QuakeAssetRecord>();
+    public DbSet<IdentityCandidate> IdentityCandidates => Set<IdentityCandidate>();
+    public DbSet<IdentityEvidence> IdentityEvidence => Set<IdentityEvidence>();
+    public DbSet<IdentityReviewEvent> IdentityReviewEvents => Set<IdentityReviewEvent>();
+    public DbSet<WebsiteDiagnosticReport> WebsiteDiagnosticReports => Set<WebsiteDiagnosticReport>();
+    public DbSet<WebsiteContentEvidence> WebsiteContentEvidence => Set<WebsiteContentEvidence>();
+    public DbSet<AiPreparationDraft> AiPreparationDrafts => Set<AiPreparationDraft>();
+    public DbSet<WebsiteRecheckSchedule> WebsiteRecheckSchedules => Set<WebsiteRecheckSchedule>();
+    public DbSet<WebsiteRecheckChange> WebsiteRecheckChanges => Set<WebsiteRecheckChange>();
+    public DbSet<ContactCandidate> ContactCandidates => Set<ContactCandidate>();
+    public DbSet<ContactCandidateEvent> ContactCandidateEvents => Set<ContactCandidateEvent>();
+    public DbSet<DataSourceAuthorization> DataSourceAuthorizations => Set<DataSourceAuthorization>();
+    public DbSet<DataSourceAuthorizationRevision> DataSourceAuthorizationRevisions => Set<DataSourceAuthorizationRevision>();
+    public DbSet<DataSourceExecutionAttempt> DataSourceExecutionAttempts => Set<DataSourceExecutionAttempt>();
+    public DbSet<LegacyRequestObservation> LegacyRequestObservations => Set<LegacyRequestObservation>();
+    public DbSet<ReverseLookupRecord> ReverseLookupRecords => Set<ReverseLookupRecord>();
+    public DbSet<LeadDemandAssessment> LeadDemandAssessments => Set<LeadDemandAssessment>();
+    public DbSet<LeadDemandAssessmentRevision> LeadDemandAssessmentRevisions => Set<LeadDemandAssessmentRevision>();
+    public DbSet<LeadAssessmentEvidence> LeadAssessmentEvidence => Set<LeadAssessmentEvidence>();
 
     /// <summary>
     /// Current tenant ID for global query filters. Returns 0 when no
@@ -128,6 +147,8 @@ public class CrmDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasSequence<long>("company_no_seq", DefaultSchema);
+        modelBuilder.HasSequence<long>("deal_no_seq", DefaultSchema);
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(DefaultSchema);
 
@@ -145,6 +166,12 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.OwnerId);
             entity.HasIndex(e => e.ExternalKey);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.SourceIdentityCandidateId })
+                .IsUnique().HasFilter("\"SourceIdentityCandidateId\" IS NOT NULL");
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.SourceIdentityCandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.ConvertedToCompanyId);
 
             entity.Property(e => e.CompanyName).HasMaxLength(200).IsRequired();
@@ -241,6 +268,7 @@ public class CrmDbContext : DbContext
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.Stage);
             entity.HasIndex(e => e.OwnerId);
+            entity.HasIndex(e => e.SourceLeadDemandAssessmentId).IsUnique();
 
             entity.Property(e => e.DealNo).HasMaxLength(50);
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
@@ -329,6 +357,308 @@ public class CrmDbContext : DbContext
 
             entity.Property(e => e.QueryText).HasMaxLength(500).IsRequired();
             entity.Property(e => e.QueryHash).HasMaxLength(64).IsRequired();
+        });
+
+        // ===== Quake 资产表（15 字段 + 清洗判定）=====
+        modelBuilder.Entity<QuakeAssetRecord>(entity =>
+        {
+            entity.ToTable("quake_asset_records");
+            entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.TenantId, e.CompanyId, e.Id });
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            // One asset per domain+port per company; re-observing updates in place.
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.Domain, e.Port }).IsUnique();
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CleanVerdict });
+            entity.HasIndex(e => e.BatchId);
+            entity.HasIndex(e => e.ObservedAt);
+
+            entity.Property(e => e.RawJson).HasColumnType("jsonb").IsRequired();
+        });
+
+        modelBuilder.Entity<IdentityCandidate>(entity =>
+        {
+            entity.ToTable("identity_candidates");
+            entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.TenantId, e.CompanyId, e.Id });
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<QuakeAssetRecord>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.AssetId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.AssetId, e.Status });
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.Domain });
+            entity.Property(e => e.Version).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<IdentityEvidence>(entity =>
+        {
+            entity.ToTable("identity_evidence");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.RecordedAt });
+        });
+
+        modelBuilder.Entity<IdentityReviewEvent>(entity =>
+        {
+            entity.ToTable("identity_review_events");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<WebsiteDiagnosticReport>(entity =>
+        {
+            entity.ToTable("website_diagnostic_reports");
+            entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.Id });
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.Version }).IsUnique();
+            entity.HasIndex(e => new { e.Status, e.NextAttemptAt, e.RequestedAt });
+            entity.Property(e => e.ChecksJson).HasColumnType("jsonb");
+            entity.Property(e => e.AttemptLogJson).HasColumnType("jsonb");
+            entity.Property(e => e.Trigger).HasDefaultValue("manual");
+        });
+
+        modelBuilder.Entity<WebsiteContentEvidence>(entity =>
+        {
+            entity.ToTable("website_content_evidence");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<WebsiteDiagnosticReport>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.ReportId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.RecordedAt });
+            entity.Property(e => e.Status).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<AiPreparationDraft>(entity =>
+        {
+            entity.ToTable("ai_preparation_drafts", table =>
+            {
+                table.HasCheckConstraint("CK_ai_preparation_status",
+                    "\"Status\" IN ('draft','unsupported','failed','cost_limit','approved','rejected')");
+                table.HasCheckConstraint("CK_ai_preparation_cost",
+                    "\"Version\" > 0 AND \"EstimatedCostCents\" >= 0 AND \"MaxCostCents\" >= 0 AND \"ActualCostCents\" >= 0");
+            });
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.CandidateId, e.TaskType, e.Version }).IsUnique();
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.RequestKey }).IsUnique();
+            entity.Property(e => e.InputEvidenceJson).HasColumnType("jsonb");
+            entity.Property(e => e.ClaimsJson).HasColumnType("jsonb");
+            entity.Property(e => e.Status).IsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<WebsiteRecheckSchedule>(entity =>
+        {
+            entity.ToTable("website_recheck_schedules");
+            entity.HasKey(e => e.CandidateId);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithOne()
+                .HasForeignKey<WebsiteRecheckSchedule>(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey<IdentityCandidate>(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.Enabled, e.NextDueAt });
+            entity.Property(e => e.IntervalDays).HasDefaultValue(7);
+        });
+
+        modelBuilder.Entity<WebsiteRecheckChange>(entity =>
+        {
+            entity.ToTable("website_recheck_changes");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.CandidateId, e.ChangedAt });
+            entity.Property(e => e.IntervalDays).HasDefaultValue(7);
+        });
+
+        modelBuilder.Entity<ContactCandidate>(entity =>
+        {
+            entity.ToTable("contact_candidates");
+            entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.TenantId, e.CompanyId, e.Id });
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<IdentityCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.IdentityCandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.IdentityCandidateId, e.Status });
+            entity.Property(e => e.FieldSourcesJson).HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<ContactCandidateEvent>(entity =>
+        {
+            entity.ToTable("contact_candidate_events");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<ContactCandidate>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.CandidateId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.CandidateId, e.OccurredAt });
+        });
+
+        modelBuilder.Entity<DataSourceAuthorization>(entity =>
+        {
+            entity.ToTable("data_source_authorizations");
+            entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.TenantId, e.CompanyId, e.Id });
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.SourceCode }).IsUnique();
+            entity.Property(e => e.SourceCode).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.AuthorizationReference).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.PermittedFields).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.CostNote).HasMaxLength(500).IsRequired();
+        });
+
+        modelBuilder.Entity<DataSourceAuthorizationRevision>(entity =>
+        {
+            entity.ToTable("data_source_authorization_revisions");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<DataSourceAuthorization>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.AuthorizationId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.AuthorizationId, e.Version }).IsUnique();
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.AuthorizationReference).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.PermittedFields).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.CostNote).HasMaxLength(500).IsRequired();
+        });
+
+        modelBuilder.Entity<DataSourceExecutionAttempt>(entity =>
+        {
+            entity.ToTable("data_source_execution_attempts");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasOne<DataSourceAuthorization>().WithMany()
+                .HasForeignKey(e => new { e.TenantId, e.CompanyId, e.AuthorizationId })
+                .HasPrincipalKey(e => new { e.TenantId, e.CompanyId, e.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.AuthorizationId, e.ReservedAt });
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.RequestId, e.AttemptNumber }).IsUnique();
+            entity.Property(e => e.SourceCode).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.RequestedFields).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.FailureCode).HasMaxLength(60);
+        });
+
+        modelBuilder.Entity<LegacyRequestObservation>(entity =>
+        {
+            entity.ToTable("legacy_request_observations");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.SourceCode, e.ObservedAt });
+            entity.Property(e => e.SourceCode).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.Route).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.Outcome).HasMaxLength(40).IsRequired();
+        });
+
+        modelBuilder.Entity<ReverseLookupRecord>(entity =>
+        {
+            entity.ToTable("reverse_lookup_records");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.QueriedAt });
+            entity.HasIndex(e => e.BatchId);
+            entity.Property(e => e.CompanyName).HasMaxLength(300).IsRequired();
+            entity.Property(e => e.InputWebsite).HasMaxLength(500);
+            entity.Property(e => e.ResultJson).HasColumnType("jsonb").IsRequired();
+        });
+
+        modelBuilder.Entity<LeadDemandAssessment>(entity =>
+        {
+            entity.ToTable("lead_demand_assessments");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.LeadId, e.Category }).IsUnique();
+            entity.Property(e => e.Category).HasConversion<int>().IsRequired();
+            entity.Property(e => e.State).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Confidence).HasMaxLength(20);
+            entity.Property(e => e.Evidence).HasMaxLength(2000);
+            entity.Property(e => e.Reason).HasMaxLength(1000);
+            entity.Property(e => e.NextAction).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<LeadDemandAssessmentRevision>(entity =>
+        {
+            entity.ToTable("lead_demand_assessment_revisions");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.LeadId, e.Category, e.Version }).IsUnique();
+            entity.Property(e => e.Category).HasConversion<int>().IsRequired();
+            entity.Property(e => e.State).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Confidence).HasMaxLength(20);
+            entity.Property(e => e.Evidence).HasMaxLength(2000);
+            entity.Property(e => e.Reason).HasMaxLength(1000);
+            entity.Property(e => e.NextAction).HasMaxLength(500);
+        });
+
+        // ===== 需求评估证据 =====
+        modelBuilder.Entity<LeadAssessmentEvidence>(entity =>
+        {
+            entity.ToTable("lead_assessment_evidence");
+            entity.HasKey(e => e.Id);
+            entity.HasQueryFilter(e => CurrentTenantId > 0 && CurrentCompanyId > 0
+                && e.TenantId == CurrentTenantId && e.CompanyId == CurrentCompanyId);
+
+            // One assessment can carry many evidence rows (e.g. 官网 + ICP +
+            // GEO), so this index is NOT unique. It serves the "show all
+            // evidence for this lead / this direction" read path.
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.LeadId, e.Category });
+            // Serves the evidence of the currently saved assessment version.
+            // Prior evidence rows are replaced on resave by B1 design.
+            entity.HasIndex(e => new { e.TenantId, e.CompanyId, e.AssessmentId, e.Version });
+
+            entity.Property(e => e.Category).HasConversion<int>().IsRequired();
+            entity.Property(e => e.EvidenceType).HasMaxLength(40).IsRequired();
+            entity.Property(e => e.VerificationStatus).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Url).HasMaxLength(1000);
+            entity.Property(e => e.Note).HasMaxLength(2000);
         });
     }
 }
