@@ -12,7 +12,7 @@
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Source released and reproducible | ✅ **GO** — commit `527eb08` reproduces the frozen R242b candidate **1,371 / 1,371 files byte-identical (SHA-256), 0 drift** |
+| 1 | Source released and reproducible | ✅ **GO** — the **release commit** `527eb08` reproduces the frozen R242b candidate **1,371 / 1,371 files byte-identical (SHA-256), 0 drift**. Scope note: 10 of those candidate files were **intentionally changed by later commits** (rename-proof paths, npm package identity, the §8 governance correction) — the current HEAD therefore reproduces the candidate's *content* but not its original *bytes*; see §4 |
 | 2 | Build | ✅ **GO** — `dotnet build -c Release`: **0 warnings, 0 errors** (38 projects); `npm run build` (`vue-tsc -b`): **PASS** |
 | 3 | Automated tests | ✅ **GO** — CRM **255/255**, API **107/107** |
 | 4 | Credential hygiene | ✅ **GO** — 16 scan candidates adjudicated in context, **0 real secrets** committed |
@@ -104,7 +104,8 @@ Against the frozen R242b candidate deploy package (103 files): **82 byte-identic
 
 | Layer | Evidence |
 |---|---|
-| Source ↔ candidate | `evidence/commit-candidate-equivalence.json` — 1,371/1,371 exact, 0 mismatch. The commit also carries **7 pre-existing tracked files outside the candidate** (listed verbatim in that evidence file: `appsettings.Development.json`, the root `gulierp-next` dump, and 5 `tools/dev/` release scripts) — none of them product code from the candidate |
+| Source ↔ candidate | `evidence/commit-candidate-equivalence.release-527eb08.json` — at the **release commit** `527eb08`: 1,371/1,371 byte-identical to the manifest, 0 mismatch, 0 line-ending drift. The live file `evidence/commit-candidate-equivalence.json` re-runs the same proof at the **current HEAD**. The commit also carries **7 pre-existing tracked files outside the candidate** (listed verbatim in that evidence file: `appsettings.Development.json`, the root `gulierp-next` dump, and 5 `tools/dev/` release scripts) — none of them product code from the candidate |
+| Candidate drift after the release commit | **Exactly 10** candidate files were changed by the commits that followed `527eb08`, and the final verification pins that set so any *new* drift fails loudly: `apps/web/package.json`, `apps/web/package-lock.json` (package identity → `@guli-platform/web`), `tools/dev/check-runtime.ps1`, `tools/dev/g2-005-operator-evidence.ps1`, `tools/dev/mdm-001-final-acceptance.ps1`, `tools/dev/mdm-001-final-acceptance-selftest.ps1`, `tools/dev/mdm-001-operator-evidence.ps1`, `tools/dev/diagnose-admin-role-binding.ps1`, `tools/dev/run-web-preview-backend.ps1` (all: hard-coded paths → `$PSScriptRoot`), `docs/governance/DATABASE_TARGET_REGISTRY.md` (§8 corrected). No product logic, schema or migration was touched |
 | Build | Release build 0 warnings / 0 errors, from **both** the original and the renamed directory |
 | Tests | CRM 255/255, API 107/107 (re-run from the renamed directory) |
 | Frontend | `vue-tsc -b` + Vite production build PASS |
@@ -149,8 +150,8 @@ The opportunity gate in `DealService.CreateAsync` refuses a deal that does not c
 
 | Row | Verified content |
 |---|---|
-| `crm.deals` | `SourceLeadDemandAssessmentId = 2`, `SourceLeadDemandAssessmentVersion = 1`, `Category = 0` (企业建站), `ExpectedAmount = 58000`, and its customer is the **converted** customer, not the directly created one |
-| `crm.lead_demand_assessments` | `State = confirmed`, `Confidence = high`, `Version = 1`, bound to the smoke lead |
+| `crm.deals` | **2** opportunities, **both** bound to a confirmed assessment id (`1` and `2`) and its version (`1`), `Category = 0` (企业建站), `ExpectedAmount = 58000`, and **both** on the **converted** customer, not the directly created one |
+| `crm.lead_demand_assessments` | `State = confirmed`, `Confidence = high`, `Version = 1`, bound to the smoke leads |
 | `crm.lead_assessment_evidence` | `EvidenceType = manual`, `VerificationStatus = verified`, with the marker in the note |
 
 ### 5.3 Credential handling
@@ -187,6 +188,8 @@ Every record the harness creates carries a unique `V10-SMOKE-<timestamp>` marker
 |---|---|
 | Smoke test | `tools/dev/release-v1-acceptance/smoke-test-crm.ps1` (also `D:\guli\platform-deploy\v1.0\smoke-test-crm.ps1`) |
 | One-command acceptance | `tools/dev/release-v1-acceptance/run-release-acceptance.ps1` — provision → smoke → retire → **prove the retirement** |
+| Consolidated verification | `tools/dev/release-v1-acceptance/final-verification.ps1` — **33 checks** over git identity, working tree, candidate drift, the four documents, the live deployment, the CRM acceptance, the database state and the backup manifest. Latest result: **33 passed, 0 failed** (`logs\final-verification.json`) |
+| Cleanup SQL (proved, not applied) | `tools/dev/release-v1-acceptance/cleanup-smoke-rows.sql` |
 | Result log | `logs/smoke-result.csv` |
 | Operator retirement repair (run once, already applied) | `D:\guli\platform-deploy\v1.0\logs\retire-verification-operator.ps1` |
 | Read-only row inspection | `D:\guli\platform-deploy\v1.0\logs\inspect-smoke-rows.ps1` |
