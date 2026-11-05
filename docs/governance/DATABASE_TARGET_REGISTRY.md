@@ -226,20 +226,27 @@ The fix is a single-line minimal change: `Database=gulierp_g2_001` → `Database
 
 ---
 
-## 8. CRM V1.2 PLANNED FORMAL TARGET (2026-10-29; NOT ACTIVE)
+## 8. CRM FORMAL TARGET `gulierp_next_prod` (2026-10-29 planned → 2026-11-05 ACTIVE)
 
-This section records the user's release planning decisions. It does **not** change the canonical operator verification database in section 1, authorize a cutover, or establish that the planned database exists.
+> **Superseded 2026-11-05.** The section previously read *"NOT ACTIVE"* and stated that the database was **not created** and the release gate **BLOCKED**. That was true when it was written and is false now. The table below is the verified reality. The release evidence behind every line is in `docs/release/` (baseline, backup verification, handoff).
 
-| Field | Planned value / status |
+This section does **not** change the canonical operator verification database in section 1, and it does **not** lift the `gulierp_g2_003_test` ACTIVE-USE HOLD, which remains in force.
+
+| Field | Verified value / status |
 |---|---|
-| Host / port | `192.168.2.228:5432` — user-provided; server identity not independently verified for formal release |
-| Database | `gulierp_next_prod` — user-approved name; **not created** |
-| Owner / migration / backup PostgreSQL role | `gulidata` proposed; actual privileges not verified |
-| Application runtime role | Separate low-privilege role approved in principle; not created, named, granted, or tested |
-| Windows backup task account | Local `GULIAI\Administrator` selected by user; scheduled task not installed or tested |
-| Backup destination | Dedicated `D:\backup\gulierp_next_prod`; isolated local ACL and synthetic file access checked; formal backup not performed |
+| Host / port | `192.168.2.228:5432` — **server identity verified**: the server reports `inet_server_addr = 172.29.32.2` (PostgreSQL 17.10 in Docker) |
+| Database | `gulierp_next_prod` — **created, migrated and serving the V1.0 release** |
+| Schema | 68 base tables (crm 32, identity 14, mdm 17, other 5); 31 CRM migrations applied, latest `20261027092759_AddGlobalCrmNumberSequences` |
+| Owner / migration / backup PostgreSQL role | `gulidata` — **verified** as the owner of the CRM number sequences, therefore holding `USAGE` on `crm.company_no_seq` / `crm.deal_no_seq` |
+| Application runtime role | **Still open.** The release runs as `gulidata` (the owner role), not a separate low-privilege role. The pre-existing IIS deployment connects as a dedicated low-privilege role `gulierp_next_app`; the self-hosted release instance does not yet. |
+| Windows backup task account | Local `GULIAI\Administrator` — **verified**: the scheduled tasks `GuliERP-Next-Prod-CRM-Daily-Backup` and `GuliERP-Next-Prod-CRM-Weekly-Backup` are installed and pass (last run 2026-11-05 02:10, result 0) |
+| Backup destination | `D:\backup\gulierp_next_prod` — **formal backups are being written**, daily + weekly |
+| Release-grade backup | `D:\backup\guli-platform\guli-platform-v1-20261105T024244Z` — 1,849 files under SHA-256, including two `pg_dump -Fc` archives of the formal target |
+| Restore proof | **Proven**: the formal-target dump was restored into an isolated local PostgreSQL cluster — 68/68 tables, 73/73 rows, 0 mismatch, `pg_restore` exit 0, `NASWritePerformed=false`. The shared server was never written to. |
 | Retention / recovery owner | Daily backups 7 days, weekly backups 4 weeks; administrator (`admin`) responsible for recovery |
-| Off-host copy | User declined; document as a single-site loss risk |
-| Release gate | **BLOCKED**: independent target identity, runtime-role privileges, capacity, formal backup and independent restore, migration preflight, and final artifact binding remain unverified |
+| Off-host copy | User declined; **documented as a single-site loss risk** |
+| Target assertion | `ReleaseDatabaseTargetGuard` asserts host / port / database / user **and** the server-reported identity before the instance starts; the release instance refuses to run against any other target. The password is resolved from Windows Credential Manager and is never written to disk. |
+| Release gate | **CLEARED for Guli Platform V1.0**: independent target identity ✅, formal backup ✅, independent restore ✅, migration preflight ✅ (no migration was executed — the target already carried all 31), final artifact binding ✅ (release candidate reproduced 1,371/1,371 byte-identical) |
+| Still open | The low-privilege runtime role is **not** in place (see the row above); off-host copy is declined; encryption at rest is not configured. |
 
-The formal release must use an explicit target assertion against the approved host, port, database, role, and server-reported identity. Do not infer correctness from a connection-string database name alone. Do not run formal migration, import, deployment, or backup execution until the separate release authorization and all applicable gates are satisfied. The `gulierp_g2_003_test` ACTIVE-USE HOLD remains in force.
+The formal release must continue to use an explicit target assertion against the approved host, port, database, role, and server-reported identity. Do not infer correctness from a connection-string database name alone. Do not run formal migration, import, deployment, or backup execution until the separate release authorization and all applicable gates are satisfied. The `gulierp_g2_003_test` ACTIVE-USE HOLD remains in force.
