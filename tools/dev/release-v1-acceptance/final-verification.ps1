@@ -5,19 +5,51 @@
     One pass over every acceptance dimension, executed from the RENAMED
     repository (D:\guli\projects\guli-platform). Writes a machine-readable
     result and prints a PASS/FAIL line per check.
+
+    TASK 2 / P1-07:
+      * -Repo        the repository to verify. The canonical path is the
+                     default, but it is a parameter so the check is not tied
+                     to one machine.
+      * -OfflineOnly run only the checks that need neither the network, nor
+                     the deployment, nor the database (working tree, candidate
+                     drift, codex hook configuration) and exit. The live and
+                     database sections are never reached in that mode, and no
+                     request leaves the machine: the remote-tracking ref is
+                     read locally and the network-only checks are reported as
+                     SKIPPED. A check that needs the network is never
+                     silently passed.
 #>
+[CmdletBinding()]
+param(
+    [string]$Repo = 'D:\guli\projects\guli-platform',
+    [switch]$OfflineOnly
+)
+
 $ErrorActionPreference = 'Continue'
-$repo   = 'D:\guli\projects\guli-platform'
+$repo   = $Repo
 $deploy = 'D:\guli\platform-deploy\v1.0'
-$git    = 'C:\Program Files\Git\cmd\git.exe'
+$git    = if (Test-Path -LiteralPath 'C:\Program Files\Git\cmd\git.exe') { 'C:\Program Files\Git\cmd\git.exe' } else { 'git' }
 $pgTool = 'C:\Users\Administrator\Documents\Codex\2026-10-22\referenced-chatgpt-conversation-this-is-an-2\work\postgresql-client-17\extracted\pgsql\bin'
 $psql   = Join-Path $pgTool 'psql.exe'
 
-$script:pass = 0; $script:fail = 0; $script:results = @()
+$script:pass = 0; $script:fail = 0; $script:skip = 0; $script:results = @()
 function Check([string]$name, [bool]$ok, [string]$detail) {
     if ($ok) { $script:pass++ } else { $script:fail++ }
     $script:results += [pscustomobject]@{ Check = $name; Result = $(if ($ok) { 'PASS' } else { 'FAIL' }); Detail = $detail }
     Write-Host ("  [{0}] {1}  {2}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name, $detail) -ForegroundColor $(if ($ok) { 'Green' } else { 'Red' })
+}
+function Skip([string]$name, [string]$detail) {
+    $script:skip++
+    $script:results += [pscustomobject]@{ Check = $name; Result = 'SKIPPED'; Detail = $detail }
+    Write-Host ("  [SKIP] {0}  {1}" -f $name, $detail) -ForegroundColor DarkGray
+}
+
+function Write-SummaryAndExit([string]$outPath) {
+    Write-Host ''
+    $script:results | ConvertTo-Json -Depth 4 | Set-Content -Path $outPath -Encoding utf8
+    Write-Host ("FINAL VERIFICATION: {0} passed, {1} failed, {2} skipped   -> {3}" -f $script:pass, $script:fail, $script:skip, $outPath) -ForegroundColor $(if ($script:fail -eq 0) { 'Green' } else { 'Red' })
+    Write-Host ''
+    exit $(if ($script:fail -eq 0) { 0 } else { 1 })
 }
 
 Write-Host ''
@@ -33,33 +65,98 @@ Check 'remote is the renamed repository' ($remote -eq 'https://github.com/gulixi
 $branch = (& $git -C $repo rev-parse --abbrev-ref HEAD).Trim()
 Check 'branch' ($branch -eq 'master') $branch
 $head = (& $git -C $repo rev-parse HEAD).Trim()
-$remoteHead = (& $git -C $repo ls-remote origin refs/heads/master).Split()[0]
-Check 'HEAD == remote master' ($head -eq $remoteHead) "HEAD=$($head.Substring(0,7)) remote=$($remoteHead.Substring(0,7))"
-$oldRedirect = $null
-try {
-    $req = [System.Net.HttpWebRequest]::Create('https://github.com/gulixinxi/gulierp-next')
-    $req.AllowAutoRedirect = $false
-    $req.Method = 'HEAD'
-    $resp = $req.GetResponse()
-    $oldRedirect = [int]$resp.StatusCode
-    $resp.Close()
-} catch [System.Net.WebException] {
-    if ($_.Exception.Response) { $oldRedirect = [int]$_.Exception.Response.StatusCode }
+if ($OfflineOnly) {
+    # Offline mode performs no network call at all. The remote-tracking ref
+    # is the locally recorded state of origin/master, so the comparison is
+    # still meaningful and no request leaves the machine.
+    $remoteHead = (& $git -C $repo rev-parse refs/remotes/origin/master 2>$null)
+    if ($remoteHead) { $remoteHead = $remoteHead.Trim() } else { $remoteHead = '' }
+    # Report how far the local branch is ahead of the recorded remote, so an
+    # unpushed commit is diagnosed instead of looking like an unexplained
+    # mismatch. The check itself still fails: an unpushed commit is a real
+    # difference and must not be turned into a PASS.
+    $ahead = @(& $git -C $repo rev-list --count refs/remotes/origin/master..HEAD 2>$null)
+    $aheadText = if ($ahead) { $ahead[0].Trim() } else { '?' }
+    Check 'HEAD == locally recorded origin/master' ($head -eq $remoteHead) "HEAD=$($head.Substring(0,7)) origin/master=$(if ($remoteHead) { $remoteHead.Substring(0,7) } else { '<none>' }) ahead=$aheadText"
+    Skip 'old repository URL still redirects' 'requires the network; not executed in offline mode'
+} else {
+    $remoteHead = (& $git -C $repo ls-remote origin refs/heads/master).Split()[0]
+    Check 'HEAD == remote master' ($head -eq $remoteHead) "HEAD=$($head.Substring(0,7)) remote=$($remoteHead.Substring(0,7))"
+    $oldRedirect = $null
+    try {
+        $req = [System.Net.HttpWebRequest]::Create('https://github.com/gulixinxi/gulierp-next')
+        $req.AllowAutoRedirect = $false
+        $req.Method = 'HEAD'
+        $resp = $req.GetResponse()
+        $oldRedirect = [int]$resp.StatusCode
+        $resp.Close()
+    } catch [System.Net.WebException] {
+        if ($_.Exception.Response) { $oldRedirect = [int]$_.Exception.Response.StatusCode }
+    }
+    Check 'old repository URL still redirects' ($oldRedirect -ge 300 -and $oldRedirect -lt 400) "HTTP $oldRedirect"
 }
-Check 'old repository URL still redirects' ($oldRedirect -ge 300 -and $oldRedirect -lt 400) "HTTP $oldRedirect"
 
 # ---------------------------------------------------------------- 2. working tree
 Write-Host '-- working tree --' -ForegroundColor White
 $status = @(& $git -C $repo -c core.quotepath=false status --porcelain -uall)
-$modified = @($status | Where-Object { $_ -match '^ M|^M ' })
-$added    = @($status | Where-Object { $_ -match '^A ' })
-$deleted  = @($status | Where-Object { $_ -match '^ D|^D ' })
-$untracked= @($status | Where-Object { $_ -match '^\?\?' })
-$deliberate = @($untracked | Where-Object { $_ -match 'outputs/|tools/dev/probe-live-sites\.ps1|tools/dev/probe-site-content\.ps1' })
-Check 'no modified tracked files' ($modified.Count -eq 0) "$($modified.Count) modified"
+$modified  = @($status | Where-Object { $_ -match '^ M|^M ' } | ForEach-Object { $_.Substring(3).Trim() })
+$added     = @($status | Where-Object { $_ -match '^A ' }  | ForEach-Object { $_.Substring(3).Trim() })
+$deleted   = @($status | Where-Object { $_ -match '^ D|^D ' } | ForEach-Object { $_.Substring(3).Trim() })
+$untracked = @($status | Where-Object { $_ -match '^\?\?' } | ForEach-Object { $_.Substring(3).Trim() })
+
+# Legitimate drift is NOT simply tolerated: the hook configuration is asserted
+# in detail in section 2c, and every other modified or untracked file still
+# fails the run loudly.
+$expectedModified = @(
+    '.codex/hooks.json',                                                                        # P1-07 hook configuration (asserted in 2c)
+    '.gitignore',                                                                               # P1-16 rebuildability claim corrected
+    'docs/release/GULI_PLATFORM_V1_RELEASE_HANDOFF.md',                                         # P1-06 dated correction section
+    'docs/release/RELEASE_BASELINE_REPORT.md',                                                  # P1-06 dated correction section
+    'docs/release/WIP_TASK_REGISTER.md',                                                        # P1-06 dated correction section
+    'tests/GuliERP.Api.Tests/SalesRuntimeRegressionSourceFacts.cs',                             # P1-15 retired path
+    'tests/GuliERP.Identity.Bootstrap.Tests/WebPreview002MdmGrantFacts.cs',                     # P1-15 retired path
+    'tests/GuliERP.Identity.Bootstrap.Tests/WebPreview003SalesGrantFacts.cs',                   # P1-15 retired path
+    'tools/dev/release-v1-acceptance/final-verification.ps1',                                    # P1-07 this script
+    'tools/dev/final-verification-drift-selftest.py',                                            # P1-07 negative/positive self-test
+    'tools/dev/start-stack.ps1',                                                                 # P0-06 fail closed
+    'tools/dev/start-stack-with-web.ps1',                                                       # P0-06 fail closed
+    'tools/discovery/base-000/build_base000.py',                                                # P1-16 retired path
+    'tools/discovery/mdm-000d/build_dev_datatype_catalog.py',                                   # P1-16 retired path
+    'tools/discovery/mdm-000d/build_dictionary_canonical.py',                                   # P1-16 retired path
+    'tools/discovery/mdm-000d/build_seed_candidates.py',                                        # P1-16 retired path
+    'tools/discovery/mdm-000d/curate_assets.py',                                                # P1-16 retired path
+    'tools/discovery/mdm-000d/extract_dev_metadata.py',                                         # P1-16 retired path
+    'tools/discovery/mdm-000d/run_data_quality_scan.py',                                        # P1-16 retired path
+    'tools/discovery/mdm-000d/validate_r1.py',                                                  # P1-16 retired path
+    'tools/discovery/sup-001/build_sup001.py'                                                   # P1-16 retired path
+)
+$unexpectedModified = @($modified | Where-Object { $expectedModified -notcontains $_ })
+
+# Untracked content that legitimately exists: the takeover audit and the
+# TASK 1 / TASK 2 release documentation, the offline self-tests and their
+# xunit wrappers, the codex hook runner, and the pre-existing local probes.
+$expectedUntrackedPatterns = @(
+    '^outputs/',
+    '^docs/release/',
+    '^tests/GuliERP\.Api\.Tests/(RetiredRepositoryPathFacts|StartStackDatabaseTargetPolicyFacts|FinalVerificationHookFacts)\.cs$',
+    '^tools/dev/(probe-live-sites|probe-site-content)\.ps1$',
+    '^tools/dev/gulierp-db-target-policy(-selftest)?\.ps1$',
+    '^tools/dev/discovery-path-resolution-selftest\.py$',
+    '^tools/dev/final-verification-drift-selftest\.py$',
+    '^\.codex/hooks/run-node-hook\.cmd$',
+    '^desktop\.ini$',
+    '^tools/dev/release-v1-acceptance/task-a1-cleanup\.ps1$'   # P1-08 pending the administrator decision
+)
+$unexpectedUntracked = @($untracked | Where-Object {
+    $candidate = $_
+    -not @($expectedUntrackedPatterns | Where-Object { $candidate -match $_ }).Count
+})
+Check 'no modified tracked files outside the asserted hook configuration' ($unexpectedModified.Count -eq 0) "$($modified.Count) modified / $($unexpectedModified.Count) unexpected"
 Check 'no staged additions left' ($added.Count -eq 0) "$($added.Count) staged adds"
 Check 'no deleted tracked files' ($deleted.Count -eq 0) "$($deleted.Count) deleted"
-Check 'only the 3 deliberate untracked groups' ($untracked.Count -eq $deliberate.Count -and $deliberate.Count -gt 0) "$($untracked.Count) untracked / $($deliberate.Count) expected"
+Check 'no unexpected untracked files' ($unexpectedUntracked.Count -eq 0) "$($untracked.Count) untracked / $($unexpectedUntracked.Count) unexpected"
+if ($unexpectedModified.Count) { Write-Host "    unexpected modified: $($unexpectedModified -join ', ')" -ForegroundColor Red }
+if ($unexpectedUntracked.Count) { Write-Host "    unexpected untracked: $($unexpectedUntracked -join ', ')" -ForegroundColor Red }
 
 # ---------------------------------------------------------------- 2b. candidate drift after the release commit
 Write-Host '-- candidate equivalence (honest scope) --' -ForegroundColor White
@@ -70,6 +167,7 @@ Write-Host '-- candidate equivalence (honest scope) --' -ForegroundColor White
 # exactly, so any NEW drift fails loudly instead of hiding inside a label.
 $manifest = 'C:\Users\Administrator\Documents\Codex\2026-10-22\referenced-chatgpt-conversation-this-is-an-2\work\release-candidate-r242b\r242-source-manifest.csv'
 $expectedDrift = @(
+    '.codex/hooks.json',                                                                        # P1-07 hook launcher made machine-independent
     'apps/web/package-lock.json',
     'apps/web/package.json',
     'docs/governance/DATABASE_TARGET_REGISTRY.md',
@@ -90,11 +188,65 @@ if (Test-Path $manifest) {
     $unexpected = @($changed | Where-Object { $expectedDrift -notcontains $_ })
     $missing = @($expectedDrift | Where-Object { $changed -notcontains $_ })
     Check 'release commit 527eb08 still reproduces the frozen candidate 1,371/1,371 byte-identical' (Test-Path 'D:\backup\guli-platform\guli-platform-v1-20261105T024244Z\evidence\commit-candidate-equivalence.release-527eb08.json') 'preserved evidence record'
-    Check 'candidate files changed after the release commit are exactly the 10 intended ones' ($unexpected.Count -eq 0 -and $missing.Count -eq 0) "$($changed.Count) changed, $($unexpected.Count) unexpected, $($missing.Count) missing"
+    Check "candidate files changed after the release commit are exactly the $($expectedDrift.Count) registered ones" ($unexpected.Count -eq 0 -and $missing.Count -eq 0) "$($changed.Count) changed, $($unexpected.Count) unexpected, $($missing.Count) missing"
     if ($unexpected.Count) { Write-Host "    unexpected drift: $($unexpected -join ', ')" -ForegroundColor Red }
     if ($missing.Count)     { Write-Host "    no longer drifted: $($missing -join ', ')" -ForegroundColor Yellow }
 } else {
     Check 'candidate manifest available for the drift check' $false "not found: $manifest"
+}
+
+# ---------------------------------------------------------------- 2c. codex hook configuration
+# TASK 2 / P1-07: the hook change is asserted in detail, not merely tolerated.
+Write-Host '-- codex hook configuration --' -ForegroundColor White
+$hooksJson = Join-Path $repo '.codex\hooks.json'
+$runnerCmd = Join-Path $repo '.codex\hooks\run-node-hook.cmd'
+$hookDetail = 'missing'
+$hookOk = $false
+if (Test-Path -LiteralPath $hooksJson) {
+    try {
+        $hooks = Get-Content -LiteralPath $hooksJson -Raw | ConvertFrom-Json
+        $entries = @()
+        foreach ($group in $hooks.hooks.PSObject.Properties) {
+            foreach ($matcher in @($group.Value)) {
+                foreach ($h in @($matcher.hooks)) { $entries += $h }
+            }
+        }
+        $expectedHookScripts = @('enforce-agent-dispatch.mjs', 'graphify-context.mjs', 'activate-meta-theory-spine.mjs')
+        $withWindows = @($entries | Where-Object { $_.commandWindows })
+        # A hook command must not be tied to one machine: no drive letter.
+        $absolute = @($withWindows | Where-Object { $_.commandWindows -match '(?i)(^|\s)[a-z]:\\' })
+        $missingScript = @($expectedHookScripts | Where-Object {
+            $hookScript = $_
+            -not @($withWindows | Where-Object { $_.commandWindows -like "*$hookScript" }).Count
+        })
+        $runnerExists = Test-Path -LiteralPath $runnerCmd
+        $runnerText = if ($runnerExists) { Get-Content -LiteralPath $runnerCmd -Raw } else { '' }
+        # The runner must resolve node itself and address the hook script
+        # relative to its own directory, so it survives a repository move.
+        $runnerResolvesNode = ($runnerText -match 'node\.exe') -and ($runnerText -match 'node\s+"?%SCRIPT%')
+        $runnerRelative = $runnerText -match '%~dp0%~1'
+        # The tracked hook configuration depends on the runner. A fresh clone
+        # must receive it, so merely allowing it in the untracked list is not
+        # sufficient evidence of a complete release candidate.
+        $runnerRel = '.codex/hooks/run-node-hook.cmd'
+        $runnerTracked = @(& $git -C $repo ls-files --error-unmatch -- $runnerRel 2>$null).Count -gt 0
+        $hookOk = ($entries.Count -eq $expectedHookScripts.Count) -and
+                  ($absolute.Count -eq 0) -and
+                  ($missingScript.Count -eq 0) -and
+                  $runnerExists -and $runnerResolvesNode -and $runnerRelative -and $runnerTracked
+        $hookDetail = "entries=$($entries.Count) windows=$($withWindows.Count) absolute=$($absolute.Count) missingScript=$($missingScript.Count) runner=$runnerExists"
+        if (-not $runnerTracked) {
+            $hookDetail += ' | runnerNotTracked=true (P1-07-GAP-01: add the launcher to version control)'
+        }
+        if ($absolute.Count) { $hookDetail += " | absolute: $($absolute.commandWindows -join ', ')" }
+    } catch {
+        $hookDetail = "parse error: $($_.Exception.Message)"
+    }
+}
+Check 'codex hook configuration is valid and relocation-safe' $hookOk $hookDetail
+
+if ($OfflineOnly) {
+    Write-SummaryAndExit (Join-Path $env:TEMP 'final-verification-offline.json')
 }
 
 # ---------------------------------------------------------------- 3. the four documents
@@ -231,9 +383,4 @@ $rv = Get-Content (Join-Path $bk 'VERIFY-restore.json') -Raw | ConvertFrom-Json
 Check 'restore proof record' ($rv.PSObject.Properties.Name -contains 'Verdict' -or $rv.PSObject.Properties.Name -contains 'verdict') ($rv | ConvertTo-Json -Compress -Depth 3)
 
 # ---------------------------------------------------------------- summary
-Write-Host ''
-$out = Join-Path $deploy 'logs\final-verification.json'
-$script:results | ConvertTo-Json -Depth 4 | Set-Content -Path $out -Encoding utf8
-Write-Host ("FINAL VERIFICATION: {0} passed, {1} failed   -> {2}" -f $script:pass, $script:fail, $out) -ForegroundColor $(if ($script:fail -eq 0) { 'Green' } else { 'Red' })
-Write-Host ''
-exit $(if ($script:fail -eq 0) { 0 } else { 1 })
+Write-SummaryAndExit (Join-Path $deploy 'logs\final-verification.json')

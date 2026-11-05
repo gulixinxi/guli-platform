@@ -7,6 +7,7 @@
           {
             "type": "command",
             "command": "node .codex/hooks/enforce-agent-dispatch.mjs",
+            "commandWindows": "cmd /c .codex\\hooks\\run-node-hook.cmd enforce-agent-dispatch.mjs",
             "timeout": 10
           }
         ]
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .codex/hooks/graphify-context.mjs"
+            "command": "node .codex/hooks/graphify-context.mjs",
+            "commandWindows": "cmd /c .codex\\hooks\\run-node-hook.cmd graphify-context.mjs"
           }
         ]
       }
@@ -28,6 +30,7 @@
           {
             "type": "command",
             "command": "node .codex/hooks/activate-meta-theory-spine.mjs",
+            "commandWindows": "cmd /c .codex\\hooks\\run-node-hook.cmd activate-meta-theory-spine.mjs",
             "timeout": 5
           }
         ]
