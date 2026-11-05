@@ -163,7 +163,9 @@ Write-Host '-- candidate equivalence (honest scope) --' -ForegroundColor White
 # The RELEASE commit 527eb08 reproduces the frozen R242b candidate
 # 1,371/1,371 byte-identical (evidence/commit-candidate-equivalence.release-527eb08.json).
 # Commits AFTER it deliberately changed 10 of those candidate files (rename-proof
-# paths, npm package identity, governance correction). This check pins that set
+# paths, npm package identity, governance correction), and the TASK 3 defect
+# fixes changed 11 more (B-3 sales idempotency replay, B-4 CRM credit code /
+# duplicate customer, the seed-mdm --dry-run contract). This check pins that set
 # exactly, so any NEW drift fails loudly instead of hiding inside a label.
 $manifest = 'C:\Users\Administrator\Documents\Codex\2026-10-22\referenced-chatgpt-conversation-this-is-an-2\work\release-candidate-r242b\r242-source-manifest.csv'
 $expectedDrift = @(
@@ -177,7 +179,19 @@ $expectedDrift = @(
     'tools/dev/mdm-001-final-acceptance-selftest.ps1',
     'tools/dev/mdm-001-final-acceptance.ps1',
     'tools/dev/mdm-001-operator-evidence.ps1',
-    'tools/dev/run-web-preview-backend.ps1'
+    'tools/dev/run-web-preview-backend.ps1',
+    # TASK 3 defect fixes (committed + pushed on master):
+    'apps/api/GuliERP.Api/Crm/CrmClientErrorDetails.cs',                                         # B-4: reviewed-message allowlist for the new CRM error texts
+    'apps/api/GuliERP.Api/Crm/CrmEndpoints.cs',                                                  # B-4: company create/update map the business exception to 4xx
+    'modules/crm/GuliERP.Crm.Infrastructure/Services/CompanyService.cs',                          # B-4: credit-code length guard + duplicate-customer error code
+    'modules/mdm/GuliERP.Mdm.Application/IMdmMasterDataSeedService.cs',                          # item 7: dryRun on the seed contract
+    'modules/mdm/GuliERP.Mdm.Application/IMdmNumberingRuleSeedService.cs',                        # item 7: dryRun on the seed contract
+    'modules/mdm/GuliERP.Mdm.Infrastructure/Seed/MdmMasterDataSeedService.cs',                    # item 7: dry-run transaction sandbox
+    'modules/mdm/GuliERP.Mdm.Infrastructure/Seed/MdmNumberingRuleSeedService.cs',                  # item 7: dry-run transaction sandbox
+    'modules/sales/GuliERP.Sales.Infrastructure/Sales/SalesOrderService.cs',                      # B-3: Idempotency-Key replay returns the original order
+    'tests/GuliERP.Mdm.IntegrationTests/GuliERP.Mdm.IntegrationTests.csproj',                     # item 7: Xunit.SkippableFact for the dry-run integration facts
+    'tests/GuliERP.Mdm.Tests/MdmServiceBoundaryArchitectureTests.cs',                             # item 7: SeedDryRunScope joins the sanctioned MdmDbContext users
+    'tools/GuliERP.Mdm.Bootstrap/Program.cs'                                                      # item 7: --dry-run reaches the numbering + masterdata seeders
 )
 if (Test-Path $manifest) {
     $candPaths = @((Import-Csv $manifest).Path)
