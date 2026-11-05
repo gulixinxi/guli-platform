@@ -10,6 +10,11 @@
 -- against the current schema and to satisfy every foreign-key constraint.
 -- It was never committed.
 --
+-- 2026-11-06: section 7 (sales orders + their lines) was added so the
+-- sales-order acceptance rows are removable as well. The extended statement
+-- set was proved the same way - executed verbatim inside a transaction that
+-- was rolled back against the formal database.
+--
 -- Usage (requires approval — it is a destructive operation on the formal
 -- release database):
 --     psql -h <host> -p 5432 -U <user> -d gulierp_next_prod \
@@ -77,5 +82,19 @@ where "LeadId" in (
 -- ---------------------------------------------------------------------------
 delete from crm.leads
 where "CompanyName" like 'V10-SMOKE-%';
+
+-- ---------------------------------------------------------------------------
+-- 7. The sales orders created by the acceptance harness.
+--    sales.gulierp_sales_order_line references the order header, so the
+--    lines go first. Only orders whose Remarks carry the marker are touched,
+--    exactly like every other section above.
+-- ---------------------------------------------------------------------------
+delete from sales.gulierp_sales_order_line
+where "SalesOrderId" in (
+        select "Id" from sales.gulierp_sales_order
+         where "Remarks" like '%V10-SMOKE-%');
+
+delete from sales.gulierp_sales_order
+where "Remarks" like '%V10-SMOKE-%';
 
 COMMIT;
