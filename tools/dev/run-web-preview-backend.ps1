@@ -7,7 +7,7 @@
 .INSTRUCTIONS
   1. Open a NEW PowerShell window (your own shell, NOT the agent's).
   2. Run:
-       powershell -ExecutionPolicy Bypass -File "d:\guli\projects\gulierp-next\tools\dev\run-web-preview-backend.ps1"
+       powershell -ExecutionPolicy Bypass -File "d:\guli\projects\guli-platform\tools\dev\run-web-preview-backend.ps1"
   3. When prompted, paste the PostgreSQL password (it will be masked).
   4. The script asserts DB=gulierp_g2_003_test, then starts dotnet on http://127.0.0.1:5000.
   5. Leave the window open. Tell the agent "backend up on :5000".
