@@ -36,12 +36,16 @@ public interface IMdmNumberingRuleSeedService
     /// <param name="includePlanned">If true, also seed items with
     /// <c>seed_status="PLANNED_V1_5"</c> (4 V1.5 rules in
     /// planned-numbering.json). Default false (V1 only).</param>
+    /// <param name="dryRun">TASK 3 第 7 项：true 表示干跑——执行完整的播种逻辑
+    /// 但整次写入被事务回滚，<b>不留任何行</b>。只支持关系型数据库；
+    /// 非关系型 provider 会明确报错而不是谎称干跑。</param>
     /// <param name="ct">Cancellation token.</param>
     Task<NumberingRuleSeedSummary> SeedAllFromPathAsync(
         string seedPath,
         long tenantId,
         long companyId,
         bool includePlanned = false,
+        bool dryRun = false,
         CancellationToken ct = default);
 }
 

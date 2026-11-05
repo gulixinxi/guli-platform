@@ -87,6 +87,7 @@ public sealed class MdmNumberingRuleSeedService : IMdmNumberingRuleSeedService
         long tenantId,
         long companyId,
         bool includePlanned = false,
+        bool dryRun = false,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
@@ -110,9 +111,30 @@ public sealed class MdmNumberingRuleSeedService : IMdmNumberingRuleSeedService
         }
 
         _logger.LogInformation(
-            "{Prefix} starting. directory={Dir} tenant={Tenant} company={Company} includePlanned={Planned}",
-            LogPrefix, seedPath, tenantId, companyId, includePlanned);
+            "{Prefix} starting. directory={Dir} tenant={Tenant} company={Company} includePlanned={Planned} dryRun={DryRun}",
+            LogPrefix, seedPath, tenantId, companyId, includePlanned, dryRun);
 
+        // TASK 3 第 7 项：--dry-run 曾经完全不生效（干跑照样写库）。
+        // 现在整次播种包进事务并在结束时回滚 ⇒ 统计口径与真实播种一致，
+        // 但库里不留任何行。
+        if (dryRun)
+        {
+            return await SeedDryRunScope.RunAsync(
+                _db,
+                () => SeedAllCoreAsync(seedPath, tenantId, companyId, includePlanned, ct),
+                ct);
+        }
+
+        return await SeedAllCoreAsync(seedPath, tenantId, companyId, includePlanned, ct);
+    }
+
+    private async Task<NumberingRuleSeedSummary> SeedAllCoreAsync(
+        string seedPath,
+        long tenantId,
+        long companyId,
+        bool includePlanned,
+        CancellationToken ct)
+    {
         // Set ICurrentTenant + ICurrentCompany for the duration of this call.
         // The downstream INumberingRuleService.RequireScope() reads from these.
         using var scope = new NumberingSeedScope(_currentTenant, _currentCompany, tenantId, companyId);

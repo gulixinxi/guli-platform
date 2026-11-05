@@ -45,11 +45,15 @@ public interface IMdmMasterDataSeedService
     /// the rest of the entities are tenant-scoped).</param>
     /// <param name="companyId">Current company. REQUIRED (Warehouse / Location
     /// are ICompanyScoped).</param>
+    /// <param name="dryRun">TASK 3 第 7 项：true 表示干跑——执行完整的播种逻辑
+    /// （读库判定存在性、写库、汇总统计）但整次写入被事务回滚，<b>不留任何行</b>。
+    /// 只支持关系型数据库；非关系型 provider 会明确报错而不是谎称干跑。</param>
     /// <param name="ct">Cancellation token.</param>
     Task<MasterDataSeedSummary> SeedAllFromPathAsync(
         string seedPath,
         long tenantId,
         long companyId,
+        bool dryRun = false,
         CancellationToken ct = default);
 }
 

@@ -62,13 +62,33 @@ public sealed class MdmMasterDataSeedService : IMdmMasterDataSeedService
     }
 
     public async Task<MasterDataSeedSummary> SeedAllFromPathAsync(
-        string seedPath, long tenantId, long companyId, CancellationToken ct = default)
+        string seedPath, long tenantId, long companyId, bool dryRun = false, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(seedPath);
         if (!Directory.Exists(seedPath))
             throw new MdmValidationException(MdmErrorCodes.ValidationFailed,
                 $"MasterData seed directory does not exist: {seedPath}");
 
+        // TASK 3 第 7 项：--dry-run 曾经完全不生效（干跑照样写库）。
+        // 现在整次播种包进事务并在结束时回滚 ⇒ 统计口径与真实播种一致，
+        // 但库里不留任何行。
+        if (dryRun)
+        {
+            _logger.LogInformation(
+                "{Prefix} DRY-RUN. directory={Dir} tenant={Tenant} company={Company} (writes will be rolled back)",
+                LogPrefix, seedPath, tenantId, companyId);
+            return await SeedDryRunScope.RunAsync(
+                _db,
+                () => SeedAllCoreAsync(seedPath, tenantId, companyId, ct),
+                ct);
+        }
+
+        return await SeedAllCoreAsync(seedPath, tenantId, companyId, ct);
+    }
+
+    private async Task<MasterDataSeedSummary> SeedAllCoreAsync(
+        string seedPath, long tenantId, long companyId, CancellationToken ct)
+    {
         _logger.LogInformation("{Prefix} starting. directory={Dir} tenant={Tenant} company={Company}",
             LogPrefix, seedPath, tenantId, companyId);
 

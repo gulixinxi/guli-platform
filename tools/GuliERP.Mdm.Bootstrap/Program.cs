@@ -450,13 +450,23 @@ public static class Program
         Console.WriteLine($"  tenant      : {opts.TenantId.Value}");
         Console.WriteLine($"  company     : {opts.CompanyId.Value}");
         Console.WriteLine($"  includePlanned: {opts.IncludePlanned}");
+        Console.WriteLine($"  dry-run     : {opts.DryRun}");
+        if (opts.DryRun)
+        {
+            Console.WriteLine("  ==> DRY-RUN: 整次播种写入将在结束时回滚，库中不会留下任何行。");
+        }
         Console.WriteLine();
 
-        var service = host.Services.GetRequiredService<IMdmNumberingRuleSeedService>();
+        // Resolve inside a scope so the scoped MdmDbContext — and therefore the
+        // dry-run transaction — is the SAME instance every downstream MDM
+        // service uses. Resolving from the root provider would give each
+        // service its own context and the rollback would not cover them.
+        using var scope = host.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IMdmNumberingRuleSeedService>();
         try
         {
             var summary = await service.SeedAllFromPathAsync(
-                seedPath, opts.TenantId.Value, opts.CompanyId.Value, opts.IncludePlanned);
+                seedPath, opts.TenantId.Value, opts.CompanyId.Value, opts.IncludePlanned, opts.DryRun);
             Console.WriteLine();
             Console.WriteLine("=== Summary ===");
             Console.WriteLine($"Files scanned          : {summary.TotalFilesScanned}");
@@ -589,12 +599,23 @@ public static class Program
         Console.WriteLine($"  seed path   : {seedPath}");
         Console.WriteLine($"  tenant      : {opts.TenantId.Value}");
         Console.WriteLine($"  company     : {opts.CompanyId.Value}");
+        Console.WriteLine($"  dry-run     : {opts.DryRun}");
+        if (opts.DryRun)
+        {
+            Console.WriteLine("  ==> DRY-RUN: 整次播种写入将在结束时回滚，库中不会留下任何行。");
+        }
         Console.WriteLine();
 
-        var service = host.Services.GetRequiredService<IMdmMasterDataSeedService>();
+        // Resolve inside a scope so the scoped MdmDbContext — and therefore the
+        // dry-run transaction — is the SAME instance every downstream MDM
+        // service uses. Resolving from the root provider would give each
+        // service its own context and the rollback would not cover them.
+        using var scope = host.Services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IMdmMasterDataSeedService>();
         try
         {
-            var summary = await service.SeedAllFromPathAsync(seedPath, opts.TenantId.Value, opts.CompanyId.Value);
+            var summary = await service.SeedAllFromPathAsync(
+                seedPath, opts.TenantId.Value, opts.CompanyId.Value, opts.DryRun);
             Console.WriteLine();
             Console.WriteLine("=== Summary ===");
             Console.WriteLine($"Files scanned       : {summary.TotalFilesScanned}");

@@ -102,6 +102,9 @@ public sealed class MdmServiceBoundaryArchitectureTests
         "MdmNumberingRuleSeedService.cs",
         "MdmMasterDataSeedService.cs",
         "ReferenceSeedService.cs",  // G3-R1: reference bootstrap seed loader
+        "SeedDryRunScope.cs",       // TASK 3 第 7 项: dry-run 事务沙箱. Only opens a
+                                    // transaction and rolls it back; it never reads or
+                                    // writes any Tenant-scoped MDM data itself.
         "DependencyInjection.cs",
         "DesignTimeMdmDbContextFactory.cs",
         "MdmDbContext.cs",
