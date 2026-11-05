@@ -80,7 +80,7 @@ Against the frozen R242b candidate deploy package (103 files): **82 byte-identic
 |---|---|---|
 | GitHub repository | `gulixinxi/gulierp-next` | **`gulixinxi/guli-platform`** (old URL redirects; verified) |
 | Remote | `…/gulierp-next.git` | **`https://github.com/gulixinxi/guli-platform.git`** (fetch ✅ push ✅) |
-| Local directory | `D:\guli\projects\gulierp-next` | **`D:\guli\projects\guli-platform`** |
+| Local directory | `D:\guli\projects\gulierp-next` | **`D:\guli\projects\guli-platform`** — the old tree is **retired**: 40 of its 43 top-level entries were moved to the Recycle Bin; only `.agents`, `.claude` and `.git` remain, held open by the running application (W-16) |
 | npm package | `@gulierp-next/web` | **`@guli-platform/web`** (package.json + lock in sync) |
 | UI title | `GuliERP · 销售订单 UX 原型(G1B-1)` | **`Guli Platform · 谷粒业务平台`** (already present in the release candidate) |
 | Script paths | hard-coded `D:\guli\projects\gulierp-next` | resolved from `$PSScriptRoot` — the tree is now move-safe |
@@ -212,6 +212,7 @@ Every record the harness creates carries a unique `V10-SMOKE-<timestamp>` marker
 | R-10 | P3 | `outputs/` holds 6 agent scratch reports; the two `tools/dev/probe-*.ps1` scripts are untracked; `appsettings.Development.json` is tracked and shipped but excluded from the deployment artifact | Promoted into `docs/verification/` and cleared in the next iteration; all preserved in the release backup |
 | R-11 | P3 | `.stack-pids.json` still records the pre-rename repository root | Regenerated automatically by `tools/dev/start-stack.ps1` |
 | R-12 | P2 | The acceptance left marker-tagged rows (`V10-SMOKE-*`) in the formal CRM database | Approve or run the marker-scoped cleanup in `WIP_TASK_REGISTER.md` (W-14) — a destructive operation that requires explicit approval |
+| R-13 | P3 | The pre-rename directory `D:\guli\projects\gulierp-next` still holds `.agents`, `.claude` and `.git` — the running application keeps them open | Close the application (or open the next session in `D:\guli\projects\guli-platform`) and delete the three folders; everything else is already in the Recycle Bin (W-16) |
 
 Full task-by-task accounting: `WIP_TASK_REGISTER.md`.
 
@@ -231,11 +232,12 @@ Full task-by-task accounting: `WIP_TASK_REGISTER.md`.
 ## 8. Next iteration priorities
 
 1. **Decide on the smoke-test residue** (R-12 / W-14) — approve and run the marker-scoped cleanup of the `V10-SMOKE-*` rows in the formal CRM database; then re-run `tools/dev/release-v1-acceptance/run-release-acceptance.ps1` so the flow stays green.
-2. **Promote the durable CRM reports out of `outputs/`** and clear the scratch directory (R-10).
-3. **Run the three-role permission matrix against the live deployment** — `CRM_OPERATOR`, `CRM_IDENTITY_REVIEWER`, `CRM_READONLY` — and record which company/tenant combinations are covered.
-4. **Decide the canonical IIS target** and run the locked recovery rehearsal as administrator (R-04, R-05).
-5. **Introduce the low-privilege runtime database role** (R-07), then the first real customer record, and only then consider real business data.
-6. **Authorise the third-party data sources** (R-02) behind their per-source authorisation model.
+2. **Finish retiring the old directory** (R-13 / W-16) — close the application and delete `D:\guli\projects\gulierp-next\{.agents,.claude,.git}`; the other 40 entries are already in the Recycle Bin.
+3. **Promote the durable CRM reports out of `outputs/`** and clear the scratch directory (R-10).
+4. **Run the three-role permission matrix against the live deployment** — `CRM_OPERATOR`, `CRM_IDENTITY_REVIEWER`, `CRM_READONLY` — and record which company/tenant combinations are covered.
+5. **Decide the canonical IIS target** and run the locked recovery rehearsal as administrator (R-04, R-05).
+6. **Introduce the low-privilege runtime database role** (R-07), then the first real customer record, and only then consider real business data.
+7. **Authorise the third-party data sources** (R-02) behind their per-source authorisation model.
 8. **Repository hygiene pass** with explicit approval for deletions (R-08, R-09, R-11).
 
 ---
