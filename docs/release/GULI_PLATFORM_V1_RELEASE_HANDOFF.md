@@ -2,7 +2,7 @@
 
 **Product**: 谷粒信息平台 (Guli Platform)
 **Repository**: `gulixinxi/guli-platform` (GitHub, public) · local `D:\guli\projects\guli-platform`
-**Release commit**: `c477959` on `master` · **release candidate commit**: `527eb08`
+**Release commit**: `69b79b8` on `master` · **release candidate commit**: `527eb08`
 **Date (UTC)**: 2026-11-05
 **Executor**: MiniMax (primary). Independent verification: Codex release-candidate pack R242b (read-only), plus in-release independent re-verification.
 
@@ -18,7 +18,7 @@
 | 4 | Credential hygiene | ✅ **GO** — 16 scan candidates adjudicated in context, **0 real secrets** committed |
 | 5 | Backup | ✅ **GO** — out-of-tree backup, 1,849-entry SHA-256 manifest, verified git bundle, 2 read-only DB archives |
 | 6 | Restore proven | ✅ **GO** — formal-target dump restored into an isolated local cluster: **68/68 tables, 73/73 rows, 0 mismatch**, no NAS write |
-| 7 | GitHub identity | ✅ **GO** — `gulixinxi/gulierp-next` → **`gulixinxi/guli-platform`**; old URL redirects; `master` = `c477959` |
+| 7 | GitHub identity | ✅ **GO** — `gulixinxi/gulierp-next` → **`gulixinxi/guli-platform`**; old URL redirects; `master` = `69b79b8` |
 | 8 | Local identity | ✅ **GO** — `D:\guli\projects\gulierp-next` → **`D:\guli\projects\guli-platform`**; remote, package identity and script paths updated; fetch / push / build verified from the new path |
 | 9 | Deployment | ✅ **GO** — live on `http://192.168.2.200:8080` against the formal database `gulierp_next_prod`; production start-up gate passed; **11/11** unauthenticated surface checks PASS |
 | 10 | Authenticated CRM business flow | ✅ **GO** — executed end to end against the live deployment: **16/16 checks PASS** (login → customer → follow-up → lead → confirmed demand assessment → lead conversion → opportunity → persistence read-back → cross-company boundary). The verification operator is retired and its login is **proven** rejected with HTTP 401 — see §5 |
@@ -26,7 +26,7 @@
 
 ### Overall verdict
 
-**GO for business availability.** The released software, its identity, its backup/restore posture, a live, database-connected deployment **and** the authenticated end-to-end business flow are all verified. What remains open is governance hygiene (R-03) and administrator-only work (R-04, R-05) — none of it a release blocker.
+**GO for business availability.** The released software, its identity, its backup/restore posture, a live, database-connected deployment **and** the authenticated end-to-end business flow are all verified. What remains open is the cleanup of the acceptance residue (R-12) and administrator-only work (R-04, R-05) — none of it a release blocker.
 
 ---
 
