@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$repo = 'D:\guli\projects\gulierp-next'
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Push-Location $repo
 try {
     $mod  = @(& git -c core.quotepath=false diff --name-only 2>$null)

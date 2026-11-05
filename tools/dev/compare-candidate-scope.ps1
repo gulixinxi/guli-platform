@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$repo = 'D:\guli\projects\gulierp-next'
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $base = 'C:\Users\Administrator\Documents\Codex\2026-10-22\referenced-chatgpt-conversation-this-is-an-2'
 $manifest = Join-Path $base 'work\release-candidate-r242b\r242-source-manifest.csv'
 

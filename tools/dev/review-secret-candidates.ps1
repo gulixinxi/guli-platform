@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$repo = 'D:\guli\projects\gulierp-next'
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $out  = 'D:\backup\guli-platform\guli-platform-v1-20261105T024244Z\evidence\sensitive-scan-precommit.json'
 $j = Get-Content $out -Raw | ConvertFrom-Json
 

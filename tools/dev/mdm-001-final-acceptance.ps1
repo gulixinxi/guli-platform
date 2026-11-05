@@ -4,7 +4,7 @@ mdm-001R8 (API Runtime Resume Harness Fix) — Operator one-shot
 acceptance harness. Two modes:
 
   Full mode (default):
-    cd D:\guli\projects\gulierp-next
+    cd D:\guli\projects\guli-platform
     .\tools\dev\mdm-001-final-acceptance.ps1
 
   Resume mode (only the API Runtime rounds, after prior

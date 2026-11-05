@@ -289,7 +289,7 @@ $report = @"
 
 ## 0. Run Metadata
 
-- Repo:    D:\guli\projects\gulierp-next
+- Repo:    D:\guli\projects\guli-platform
 - Branch:  $branch
 - HEAD:    $head
 - Date:    $ts

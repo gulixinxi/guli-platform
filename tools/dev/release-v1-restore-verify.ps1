@@ -66,7 +66,7 @@ if (-not $sourceDb) { throw "Could not derive source database name from '$($targ
 Say "Archive under test: $($target.Name) ($([math]::Round($target.Length/1KB,1)) KB); source database = '$sourceDb'"
 
 # ------------------------------------------------- source-side read-only facts
-$envFile = 'D:\guli\projects\gulierp-next\.env.local'
+$envFile = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) '.env.local'
 $conn = (Get-Content $envFile | Where-Object { $_ -match '^ConnectionStrings__GuliERP=' } | Select-Object -First 1) -replace '^ConnectionStrings__GuliERP=',''
 $host_ = if ($conn -match 'Host=([^;]+)') { $matches[1] } else { throw 'no Host' }
 $port_ = if ($conn -match 'Port=([^;]+)') { $matches[1] } else { '5432' }

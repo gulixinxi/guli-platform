@@ -40,7 +40,7 @@ R8 closes the gap with the following new tests:
   28. env var roundtrip on GULIERP_MDM_SEED_FILE.
 
 Run:
-  cd D:\guli\projects\gulierp-next
+  cd D:\guli\projects\guli-platform
   pwsh -NoProfile -File tools/dev/mdm-001-final-acceptance-selftest.ps1
 
 Exit code 0 = all pure-logic + process-lifecycle self-tests

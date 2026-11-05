@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     GuliERP Next runtime guard. Verifies the operator's machine is running
-    the NEW project (D:\guli\projects\gulierp-next, ASP.NET Core Identity +
+    the NEW project (D:\guli\projects\guli-platform, ASP.NET Core Identity +
     PostgreSQL) and NOT the OLD project (D:\guli\gulierp, Admin.NET +
     SQLite).
 
@@ -50,7 +50,7 @@
     Run only section 4 (NAS PG + ConnectionStrings).
 
 .EXAMPLE
-    PS> .\tools\dev\check-runtime.ps1 -RepoPath D:\guli\projects\gulierp-next
+    PS> .\tools\dev\check-runtime.ps1 -RepoPath D:\guli\projects\guli-platform
     Run against a specific repo path.
 
 .OUTPUTS
@@ -77,7 +77,8 @@ $ErrorActionPreference = 'Stop'
 #  Constants
 # ----------------------------------------------------------------
 $OLD_PROJECT_ROOT       = "D:\guli\gulierp"
-$NEW_PROJECT_ROOT       = "D:\guli\projects\gulierp-next"
+# Resolved from the script location so the repository can be renamed/moved without editing.
+$NEW_PROJECT_ROOT       = if ($PSScriptRoot) { Split-Path -Parent (Split-Path -Parent $PSScriptRoot) } else { "D:\guli\projects\guli-platform" }
 $OLD_DOTNET_RUNTIME     = "D:\guli\gulierp\.dotnet\dotnet.exe"
 $OLD_SQLITE_HINT        = "DataSource="
 $OLD_SQLITE_HINT_ALT    = "Data Source="

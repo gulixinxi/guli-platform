@@ -5,7 +5,7 @@ MDM-001 — Operator Evidence Harness (lightweight).
 Operator usage:
 
   NEW POWERSHELL
-  cd D:\guli\projects\gulierp-next
+  cd D:\guli\projects\guli-platform
   .\tools\dev\mdm-001-operator-evidence.ps1
 
 The harness:

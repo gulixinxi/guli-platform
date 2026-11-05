@@ -5,7 +5,7 @@ G2-005 — Final Operator Evidence Harness
 Operator usage:
 
   NEW POWERSHELL
-  cd D:\guli\projects\gulierp-next
+  cd D:\guli\projects\guli-platform
   .\tools\dev\g2-005-operator-evidence.ps1
 
 The harness prompts locally for the PostgreSQL password, propagates the
