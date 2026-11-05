@@ -349,6 +349,8 @@ select 'RES_COMPANIES='||(select count(*) from crm.companies where "FullName" li
 select 'RES_LEADS='||(select count(*) from crm.leads where "CompanyName" like 'V10-SMOKE-%');
 select 'RES_DEALS='||(select count(*) from crm.deals where "Name" like 'V10-SMOKE-%');
 select 'RES_ACTIVITIES='||(select count(*) from crm.activities where "Content" like '%V10-SMOKE-%');
+select 'RES_ASSESSMENTS='||(select count(*) from crm.lead_demand_assessments a where a."LeadId" in (select "Id" from crm.leads where "CompanyName" like 'V10-SMOKE-%'));
+select 'RES_EVIDENCE='||(select count(*) from crm.lead_assessment_evidence e where e."LeadId" in (select "Id" from crm.leads where "CompanyName" like 'V10-SMOKE-%'));
 select 'DEAL_COUNT='||count(*) from crm.deals where "Name" like 'V10-SMOKE-%';
 select 'DEAL_ALL_BOUND='||count(*) from crm.deals where "Name" like 'V10-SMOKE-%' and "SourceLeadDemandAssessmentId" is not null and "SourceLeadDemandAssessmentVersion" is not null;
 select 'DEAL_COMPANY_IS_CONVERTED='||count(*) from crm.deals d join crm.companies c on c."Id"=d."CrmCompanyId" where d."Name" like 'V10-SMOKE-%' and c."FullName" like '%转化客户%';
@@ -372,12 +374,17 @@ Write-Host ("    deal -> assessment ids={0} versions={1} count={2} allBound={3} 
 $opRetired = (DbVal 'OP_COUNT') -eq '1' -and (DbVal 'OP_STATUS') -eq '2' -and (DbVal 'OP_LOCKOUT_ENABLED') -eq 'true' -and (DbVal 'OP_LOCKOUT_END_SET') -eq 'true' -and (DbVal 'OP_ROLES') -eq '0' -and (DbVal 'OP_MEMBERSHIPS') -eq '0'
 Check 'verification operator retired (Status=2, lockout armed, 0 roles, 0 memberships)' $opRetired 'exactly 1 operator row, disabled'
 Check 'business account wangchunqing still Active' ((DbVal 'BIZ_STATUS') -eq '1') "status=$(DbVal 'BIZ_STATUS')"
-$resOk = (DbVal 'RES_COMPANIES') -eq '6' -and (DbVal 'RES_LEADS') -eq '3' -and (DbVal 'RES_DEALS') -eq '2' -and (DbVal 'RES_ACTIVITIES') -eq '5'
-Check 'acceptance residue present and counted (6 customers, 3 leads, 2 deals, 5 activities)' $resOk 'marker-scoped, awaits cleanup approval'
-$dealOk = (DbVal 'DEAL_COUNT') -eq '2' -and (DbVal 'DEAL_ALL_BOUND') -eq (DbVal 'DEAL_COUNT') -and (DbVal 'DEAL_COMPANY_IS_CONVERTED') -eq (DbVal 'DEAL_COUNT')
-Check 'every opportunity bound to the confirmed assessment (id + version) on the converted customer' $dealOk "deals=$(DbVal 'DEAL_COUNT') bound=$(DbVal 'DEAL_ALL_BOUND') ids=$(DbVal 'DEAL_ASSESSMENT_IDS') versions=$(DbVal 'DEAL_ASSESSMENT_VERSIONS')"
-$asmOk = (DbVal 'ASSESSMENT_STATE') -eq 'confirmed' -and (DbVal 'EVIDENCE_TYPE') -eq 'manual'
-Check 'assessment is confirmed with structured evidence' $asmOk "state=$(DbVal 'ASSESSMENT_STATE') type=$(DbVal 'EVIDENCE_TYPE')"
+# BASELINE (approved by the controller): the Task A1 cleanup was executed and
+# evidenced, so the V10-SMOKE-* acceptance residue is expected to be ABSENT.
+# Evidence: docs/release/TASK_A1_SMOKE_CLEANUP_EVIDENCE.md (22 rows removed,
+# 0 remaining). The previous expectation (6/3/2/5 present) predated that
+# cleanup and was a stale assertion, not a live requirement.
+$resOk = (DbVal 'RES_COMPANIES') -eq '0' -and (DbVal 'RES_LEADS') -eq '0' -and (DbVal 'RES_DEALS') -eq '0' -and (DbVal 'RES_ACTIVITIES') -eq '0' -and (DbVal 'RES_ASSESSMENTS') -eq '0' -and (DbVal 'RES_EVIDENCE') -eq '0'
+Check 'acceptance residue absent after the approved Task A1 cleanup (0 customers, 0 leads, 0 deals, 0 activities, 0 assessments, 0 evidence)' $resOk ("companies={0} leads={1} deals={2} activities={3} assessments={4} evidence={5} | baseline: docs/release/TASK_A1_SMOKE_CLEANUP_EVIDENCE.md" -f (DbVal 'RES_COMPANIES'), (DbVal 'RES_LEADS'), (DbVal 'RES_DEALS'), (DbVal 'RES_ACTIVITIES'), (DbVal 'RES_ASSESSMENTS'), (DbVal 'RES_EVIDENCE'))
+$dealOk = (DbVal 'DEAL_COUNT') -eq '0' -and (DbVal 'DEAL_ALL_BOUND') -eq '0' -and (DbVal 'DEAL_COMPANY_IS_CONVERTED') -eq '0'
+Check 'acceptance residue opportunities removed after the approved Task A1 cleanup (any residual opportunity must still be bound to the confirmed assessment)' $dealOk ("deals={0} bound={1} ids={2} versions={3} | baseline: docs/release/TASK_A1_SMOKE_CLEANUP_EVIDENCE.md" -f (DbVal 'DEAL_COUNT'), (DbVal 'DEAL_ALL_BOUND'), (DbVal 'DEAL_ASSESSMENT_IDS'), (DbVal 'DEAL_ASSESSMENT_VERSIONS'))
+$asmOk = [string]::IsNullOrWhiteSpace((DbVal 'ASSESSMENT_STATE')) -and [string]::IsNullOrWhiteSpace((DbVal 'EVIDENCE_TYPE')) -and (DbVal 'RES_ASSESSMENTS') -eq '0' -and (DbVal 'RES_EVIDENCE') -eq '0'
+Check 'acceptance residue demand assessments and evidence removed after the approved Task A1 cleanup (0 rows)' $asmOk ("state={0} type={1} assessments={2} evidence={3} | baseline: docs/release/TASK_A1_SMOKE_CLEANUP_EVIDENCE.md" -f (DbVal 'ASSESSMENT_STATE'), (DbVal 'EVIDENCE_TYPE'), (DbVal 'RES_ASSESSMENTS'), (DbVal 'RES_EVIDENCE'))
 
 # ---------------------------------------------------------------- 7. backup
 Write-Host '-- backup --' -ForegroundColor White
