@@ -312,8 +312,17 @@ public static class CrmEndpoints
                     request.OwnerId, identityDb, currentTenant, currentCompany, ct);
                 if (guard is not null) return guard;
                 var userId = GetUserId(http);
-                var created = await svc.CreateAsync(request, userId, ct);
-                return Results.Created($"/api/v1/crm/companies/{created.Id}", created);
+                try
+                {
+                    var created = await svc.CreateAsync(request, userId, ct);
+                    return Results.Created($"/api/v1/crm/companies/{created.Id}", created);
+                }
+                catch (CrmValidationException ex)
+                {
+                    // TASK 3 B-4: 客户端输入问题（超长信用代码 / 重复建档）
+                    // 必须是 4xx，不能落到 FoundationExceptionHandler 变成 500。
+                    return CrmValidationFailure(ex);
+                }
             })
             .RequireAuthorization(CrmPolicies.CompanyManage);
 
@@ -331,6 +340,11 @@ public static class CrmEndpoints
                 catch (CrmOwnerChangeNotAllowedException ex)
                 {
                     return OwnerChangeNotAllowed(ex);
+                }
+                catch (CrmValidationException ex)
+                {
+                    // TASK 3 B-4: 编辑路径同样要拦超长信用代码。
+                    return CrmValidationFailure(ex);
                 }
             })
             .RequireAuthorization(CrmPolicies.CompanyManage);
@@ -1907,6 +1921,26 @@ public static class CrmEndpoints
         var claim = http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                     ?? http.User.FindFirst("sub")?.Value;
         return long.TryParse(claim, out var id) ? id : null;
+    }
+
+    /// <summary>
+    /// CRM 业务校验失败的统一出口。
+    ///
+    /// <para>
+    /// 状态码由错误码决定：重复建档是资源冲突 ⇒ 409；输入非法 ⇒ 400。
+    /// 文案走 <see cref="CrmClientErrorDetails"/> 白名单：只有被复核过的固定
+    /// 文案才允许原样出站，其余一律替换为通用提示，避免把调用方输入带出去。
+    /// </para>
+    /// </summary>
+    private static IResult CrmValidationFailure(CrmValidationException ex)
+    {
+        var status = ex.Code == CrmErrorCodes.DuplicateCompany
+            ? StatusCodes.Status409Conflict
+            : StatusCodes.Status400BadRequest;
+
+        return Results.Json(
+            new { code = ex.Code, detail = CrmClientErrorDetails.Safe(status, ex.Message) },
+            statusCode: status);
     }
 
     /// <summary>

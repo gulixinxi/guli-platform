@@ -8,6 +8,9 @@ namespace GuliERP.Crm.Infrastructure.Services;
 
 public class CompanyService : ICompanyService
 {
+    /// <summary>crm.companies.CreditCode 的列宽上限（varchar(18)）。</summary>
+    private const int MaxCreditCodeLength = 18;
+
     private readonly CrmDbContext _db;
     private readonly ICrmNumberGenerator _numbers;
 
@@ -67,7 +70,14 @@ public class CompanyService : ICompanyService
 
         if (exists)
         {
-            throw new InvalidOperationException($"客户已存在（{(!string.IsNullOrEmpty(normalizedCreditCode) ? "信用代码: " + normalizedCreditCode : "公司全称: " + request.FullName)}）");
+            // TASK 3 B-4: a duplicate customer is a client-side conflict, not a
+            // server fault. The message is a FIXED string on purpose - it must
+            // not echo back the caller's own credit code / full name.
+            throw new CrmValidationException(
+                CrmErrorCodes.DuplicateCompany,
+                !string.IsNullOrEmpty(normalizedCreditCode)
+                    ? "客户已存在（按统一社会信用代码判定），请勿重复建档。"
+                    : "客户已存在（按公司全称判定），请勿重复建档。");
         }
 
         var company = new Company
@@ -267,11 +277,25 @@ public class CompanyService : ICompanyService
     private static long SnowflakeId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000 + Random.Shared.Next(1000);
 
     /// <summary>
-    /// 统一社会信用代码标准化：去空格、转大写
+    /// 统一社会信用代码标准化：去空格、转大写，并校验长度上限。
+    ///
+    /// <para>
+    /// crm.companies.CreditCode 是 varchar(18)。TASK 3 B-4 之前这里只做
+    /// trim+大写，超长值会一路送到 PostgreSQL 触发 22001，而没有任何一层
+    /// 把它映射成 4xx ⇒ 调用方拿到 HTTP 500（纯客户端错误被报成服务端故障）。
+    /// 这里提前拦截，抛 <see cref="CrmValidationException"/>，由 API 层翻译成 400。
+    /// </para>
     /// </summary>
     private static string? NormalizeCreditCode(string? code)
     {
         if (string.IsNullOrWhiteSpace(code)) return null;
-        return code.Trim().ToUpperInvariant();
+        var normalized = code.Trim().ToUpperInvariant();
+        if (normalized.Length > MaxCreditCodeLength)
+        {
+            throw new CrmValidationException(
+                CrmErrorCodes.InvalidCreditCode,
+                $"统一社会信用代码长度不能超过 {MaxCreditCodeLength} 位。");
+        }
+        return normalized;
     }
 }

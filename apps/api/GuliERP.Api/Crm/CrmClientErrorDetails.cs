@@ -96,6 +96,10 @@ public static class CrmClientErrorDetails
         "身份候选已变化，请刷新后重试。",
         "复检计划已被其他人员修改，请刷新重试。",
         "身份审核版本已变化，请重新预检。",
+        // TASK 3 B-4：超长统一社会信用代码 / 重复建档（固定文案，不回显调用方输入）。
+        "统一社会信用代码长度不能超过 18 位。",
+        "客户已存在（按统一社会信用代码判定），请勿重复建档。",
+        "客户已存在（按公司全称判定），请勿重复建档。",
     };
 
     public static string Safe(int status, string? message) =>
