@@ -98,6 +98,42 @@ public sealed class SalesOrderService : ISalesOrderService
             idempotencyKey,
             _currentUser.Id ?? 0), ct);
 
+        // ---------------------------------------------------------------
+        // Idempotent replay (TASK 3 B-3 defect fix).
+        //
+        // The document-number generator is keyed by Idempotency-Key, so a
+        // retried request resolves to the SAME document number. Without
+        // the lookup below the retry inserted a SECOND SalesOrder carrying
+        // that number and died on the ux_gulierp_sales_order_scope_orderno
+        // unique index -> HTTP 500. The endpoint advertises replay safety
+        // through the header, so a retry must return the original order.
+        //
+        // The same key with a DIFFERENT payload is a client bug: refuse it
+        // instead of handing back an order that does not match the request.
+        // ---------------------------------------------------------------
+        var replayed = await _sales.SalesOrders
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .FirstOrDefaultAsync(
+                x => x.TenantId == tenantId
+                     && x.CompanyId == companyId
+                     && x.OrderNo == number.DocumentNo,
+                ct);
+        if (replayed is not null)
+        {
+            if (!SamePayload(replayed, request))
+            {
+                throw new SalesValidationException(
+                    SalesErrorCodes.ValidationFailed,
+                    "Idempotency-Key was already used for a different sales order payload.");
+            }
+
+            _logger.LogInformation(
+                "SalesOrder idempotent replay: tenant={TenantId} company={CompanyId} no={OrderNo} id={Id}",
+                tenantId, companyId, replayed.OrderNo, replayed.Id);
+            return Map(replayed);
+        }
+
         var order = new SalesOrder
         {
             TenantId = tenantId,
@@ -349,6 +385,69 @@ public sealed class SalesOrderService : ISalesOrderService
         }
         return trimmed;
     }
+
+    /// <summary>
+    /// TASK 3 B-3: decide whether a replayed create request carries the SAME
+    /// payload as the sales order that already owns the document number that
+    /// was resolved for its Idempotency-Key.
+    ///
+    /// Only client-controlled fields participate in the comparison.
+    /// Server-authoritative values are deliberately EXCLUDED:
+    ///   * SpecificationSnapshot - re-captured from Item on every write.
+    ///   * UomId when the client did not specify one - the server falls back
+    ///     to the Item base UOM, so a null request field cannot be compared
+    ///     against the persisted value. When the client DID specify a UOM it
+    ///     is compared, because that is an explicit client choice.
+    ///   * Item / Customer code+name snapshots - captured from master data.
+    ///
+    /// Decimals are compared after rounding to the persisted column scale
+    /// (Quantity/UnitPrice numeric(18,4), DiscountRate/TaxRate numeric(9,6))
+    /// so that a legitimate replay of a payload carrying more decimals than
+    /// the column keeps (e.g. Quantity 10.00001 -> 10.0000) is still
+    /// recognised as the same payload instead of being rejected.
+    /// </summary>
+    private static bool SamePayload(SalesOrder existing, CreateSalesOrderRequest request)
+    {
+        if (existing.CustomerId != request.CustomerId) return false;
+        if (existing.OrderDate != request.OrderDate) return false;
+        if (existing.RequestedDeliveryDate != request.RequestedDeliveryDate) return false;
+        if (existing.WarehouseId != request.WarehouseId) return false;
+        if (!SameText(existing.Remarks, request.Remarks)) return false;
+        if (!SameText(existing.DeliveryAddressSnapshot, request.DeliveryAddressSnapshot)) return false;
+
+        // LineNo is assigned 10, 20, 30 ... in request order by
+        // ReplaceLinesAsync, so the Nth request line maps to the Nth
+        // persisted line.
+        var storedLines = existing.Lines.OrderBy(x => x.LineNo).ToList();
+        if (storedLines.Count != request.Lines.Count) return false;
+
+        for (var i = 0; i < storedLines.Count; i++)
+        {
+            var stored = storedLines[i];
+            var input = request.Lines[i];
+
+            if (stored.ItemId != input.ItemId) return false;
+            if (input.UomId.HasValue && stored.UomId != input.UomId.Value) return false;
+            if (!SameDecimal(stored.Quantity, input.Quantity, 4)) return false;
+            if (!SameDecimal(stored.UnitPrice, input.UnitPrice, 4)) return false;
+            if (!SameDecimal(stored.DiscountRate, input.DiscountRate, 6)) return false;
+            if (!SameDecimal(stored.TaxRate, input.TaxRate, 6)) return false;
+            if (!SameText(stored.Remarks, input.Remarks)) return false;
+        }
+
+        return true;
+    }
+
+    private static bool SameText(string? a, string? b)
+    {
+        var left = string.IsNullOrWhiteSpace(a) ? null : a.Trim();
+        var right = string.IsNullOrWhiteSpace(b) ? null : b.Trim();
+        return string.Equals(left, right, StringComparison.Ordinal);
+    }
+
+    private static bool SameDecimal(decimal a, decimal b, int scale)
+        => Math.Round(a, scale, MidpointRounding.AwayFromZero)
+         == Math.Round(b, scale, MidpointRounding.AwayFromZero);
 
     private static (int Page, int PageSize) NormalizePaging(int page, int pageSize)
     {
